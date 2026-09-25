@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import type { Activity } from "@/db/schema";
 import { formatDistance, formatDuration, formatNumber, formatPace, formatSpeedKmh } from "@/lib/format";
+import { SOURCE_APP_LABEL, type SourceAppId } from "@/lib/apps";
 
 const METHOD: Record<string, string> = {
   power: "aus Leistung (NP / FTP)",
@@ -47,8 +48,9 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
             {Math.round(a.tss)} TSS {a.tssMethod ? `· ${METHOD[a.tssMethod]}` : ""}
           </Badge>
         ) : null}
-        {a.deviceName ? <Badge>{a.deviceName}</Badge> : null}
-        <Badge>{a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : a.provider === "intervals" ? "intervals.icu" : "Manuell"}</Badge>
+        {a.sourceApp && a.sourceApp in SOURCE_APP_LABEL ? <Badge tone="info">{SOURCE_APP_LABEL[a.sourceApp as SourceAppId]}</Badge> : null}
+        {a.deviceName && a.deviceName !== (a.sourceApp ? SOURCE_APP_LABEL[a.sourceApp as SourceAppId] : null) ? <Badge>{a.deviceName}</Badge> : null}
+        <Badge>über {a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : a.provider === "intervals" ? "intervals.icu" : "Datei-Import"}</Badge>
       </div>
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
         {metrics.map(([k, v]) => (

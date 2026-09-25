@@ -1,4 +1,5 @@
 import "server-only";
+import { detectSourceApp } from "@/lib/apps";
 import { encodeGarminWorkout } from "@/lib/workout/export/garmin";
 import { env } from "../env";
 import { providerFetch } from "./http";
@@ -79,6 +80,7 @@ export function normalizeGarminActivity(a: GarminActivitySummary): NormalizedAct
     avgSpeed: a.averageSpeedInMetersPerSecond ?? null,
     calories: a.activeKilocalories ?? null,
     deviceName: a.deviceName ?? "Garmin",
+    sourceApp: detectSourceApp({ hints: [a.deviceName], name: a.activityName, fallback: "garmin" }),
   };
 }
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AutoAdaptCard } from "@/components/auto-adapt-card";
 import { SettingsForm } from "@/components/settings-form";
 import { PageHeader } from "@/components/ui/card";
 import { requireUser } from "@/lib/server/auth";
@@ -10,6 +11,9 @@ export default async function SettingsPage() {
   return (
     <div className="animate-fade-up">
       <PageHeader title="Einstellungen" description={user.isDemo ? "Demo-Konto" : user.email} />
+      <div className="mb-5">
+        <AutoAdaptCard initial={user.autoAdapt} />
+      </div>
       <SettingsForm
         isDemo={user.isDemo}
         initial={{

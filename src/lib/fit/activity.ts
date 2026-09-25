@@ -8,6 +8,7 @@ import { Decoder, Stream } from "@garmin/fitsdk";
 import { createHash } from "node:crypto";
 import { unzipSync } from "fflate";
 import type { NormalizedActivity } from "@/lib/server/providers/types";
+import { detectSourceApp } from "@/lib/apps";
 
 type AnyMesg = Record<string, unknown>;
 
@@ -260,6 +261,7 @@ export function decodeFitActivity(bytes: Uint8Array, fileName: string, lthr: num
       calories: positive(s.totalCalories),
       hrZoneSec: hrZonesFromRecords(sessionRecords, lthr) ?? (timeInZone && timeInZone.length >= 5 ? timeInZone.slice(0, 5).map((v) => Math.round(v ?? 0)) : null),
       deviceName,
+      sourceApp: detectSourceApp({ hints: [deviceName === "FIT-Datei" ? null : deviceName, fileName], fallback: "file" }),
     });
   });
   return { activities, errors: activities.length ? [] : [`${fileName}: keine auswertbare Einheit`] };

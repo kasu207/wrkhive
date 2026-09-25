@@ -5,12 +5,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { activities, deviceConnections, users, workouts } from "@/db/schema";
-import { activityLoad, effectiveVo2max } from "@/lib/analytics/load";
-import { destroySession, requireUser, thresholdsOf } from "@/lib/server/auth";
+import { deviceConnections, users } from "@/db/schema";
+import { destroySession, requireUser } from "@/lib/server/auth";
 import { decrypt } from "@/lib/server/crypto";
 import { PROVIDERS } from "@/lib/server/sync";
-import { summarize } from "@/lib/workout/metrics";
+import { recomputeLoads } from "@/lib/server/thresholds";
 import type { ActionResult } from "./workouts";
 
 const profile = z.object({
@@ -39,7 +38,6 @@ export async function updateProfile(input: Record<string, string>): Promise<Acti
   } catch {
     /* keep previous */
   }
-  const db = getDb();
   const next = {
     name: p.name,
     ftp: p.ftp,
@@ -50,22 +48,10 @@ export async function updateProfile(input: Record<string, string>): Promise<Acti
     weightKg: p.weightKg === "" ? null : p.weightKg,
     timeZone,
   };
-  db.update(users).set(next).where(eq(users.id, user.id)).run();
+  getDb().update(users).set(next).where(eq(users.id, user.id)).run();
 
   // Thresholds changed: re-derive load metrics for workouts and activities.
-  const t = thresholdsOf(next);
-  db.transaction((tx) => {
-    for (const w of tx.select().from(workouts).where(eq(workouts.userId, user.id)).all()) {
-      const s = summarize(w.structure, t);
-      tx.update(workouts).set({ durationSec: s.durationSec, distanceM: s.distanceM, tss: s.tss }).where(eq(workouts.id, w.id)).run();
-    }
-    const model = { ...t, restHr: next.restHr };
-    for (const a of tx.select().from(activities).where(eq(activities.userId, user.id)).all()) {
-      const load = activityLoad(a, model);
-      const vo2 = a.sport === "run" && a.distanceM ? effectiveVo2max({ distanceM: a.distanceM, durationSec: a.movingSec ?? a.durationSec, avgHr: a.avgHr }, next.maxHr) : null;
-      tx.update(activities).set({ tss: load.tss, tssMethod: load.method, vo2maxEst: vo2 }).where(eq(activities.id, a.id)).run();
-    }
-  });
+  recomputeLoads(user.id, next);
   revalidatePath("/", "layout");
   return { ok: true, message: "Gespeichert. Belastungswerte wurden neu berechnet." };
 }

@@ -448,9 +448,14 @@ async function intervals(req, res, url, path) {
       const local = new Date(start.getTime() + 2 * 3600e3).toISOString().slice(0, 19);
       return { id, type, name, start_date: start.toISOString().replace(".000", ""), start_date_local: local, ...extra };
     };
+    // Days chosen so no other simulated source has the same sport on that day (no accidental merges).
     return send(res, 200, [
       act("i9001", 5, "VirtualRide", "Rolle – Sweet Spot ERG", { moving_time: 3600, elapsed_time: 3660, distance: 33000, icu_average_watts: 205, icu_weighted_avg_watts: 214, average_heartrate: 142, device_name: "ELEMNT BOLT" }),
-      act("i9002", 6, "Run", "Intervalle am Dienstag", { moving_time: 2900, elapsed_time: 3000, distance: 9100, average_heartrate: 156, device_name: "Forerunner 265" }),
+      act("i9002", 7, "Run", "Intervalle am Dienstag", { moving_time: 2900, elapsed_time: 3000, distance: 9100, average_heartrate: 156, device_name: "Forerunner 265" }),
+      // MyWhoosh uploads the same ride twice (known behaviour); Wrkhive must merge them.
+      act("i9004", 9, "VirtualRide", "MyWhoosh – Sweet Spot", { source: "OAUTH_CLIENT", oauth_client_name: "MyWhoosh", moving_time: 3500, elapsed_time: 3500, distance: 31000, icu_average_watts: 198, icu_weighted_avg_watts: 207 }),
+      act("i9005", 9, "VirtualRide", "MyWhoosh – Sweet Spot", { source: "OAUTH_CLIENT", oauth_client_name: "MyWhoosh", moving_time: 3500, elapsed_time: 3500, distance: 31000, icu_average_watts: 198, icu_weighted_avg_watts: 207 }),
+      act("i9006", 8, "VirtualRide", "Watopia Flat", { source: "ZWIFT", device_name: "Zwift", moving_time: 2700, elapsed_time: 2700, distance: 25000, icu_average_watts: 180 }),
       { id: "i9003", source: "STRAVA", _note: "Strava activities are not available via the API" },
     ]);
   }

@@ -4,10 +4,11 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { getDb } from "@/db";
-import { activities, deviceConnections } from "@/db/schema";
-import { requireUser } from "@/lib/server/auth";
+import { activities, deviceConnections, providerApps } from "@/db/schema";
+import { isInstallationOwner, requireUser } from "@/lib/server/auth";
 import { beginConnect, createConnection } from "@/lib/server/connections";
-import { decrypt } from "@/lib/server/crypto";
+import { decrypt, encrypt } from "@/lib/server/crypto";
+import { env } from "@/lib/server/env";
 import { PROVIDERS, syncConnection } from "@/lib/server/sync";
 import type { ActionResult } from "./workouts";
 
@@ -104,4 +105,32 @@ export async function syncNow(provider: string, full = false): Promise<ActionRes
   revalidatePath("/dashboard");
   revalidatePath("/activities");
   return r.ok ? { ok: true, message: r.message } : { ok: false, error: r.message };
+}
+
+const CREDENTIAL = /^[A-Za-z0-9._~-]{8,200}$/;
+
+/**
+ * Self-hosted setup: the installation owner registers a personal Wahoo
+ * developer app (sandbox, free, no review) and enters its credentials here.
+ */
+export async function saveWahooApp(clientId: string, clientSecret: string): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!isInstallationOwner(user)) return { ok: false, error: "Nur der Besitzer dieser Installation kann die Wahoo-App hinterlegen." };
+  if (env.wahoo().source === "env") return { ok: false, error: "Die Wahoo-Zugangsdaten sind bereits in der Server-Konfiguration hinterlegt." };
+  const id = typeof clientId === "string" ? clientId.trim() : "";
+  const secret = typeof clientSecret === "string" ? clientSecret.trim() : "";
+  if (!CREDENTIAL.test(id)) return { ok: false, error: "Die Client-ID sieht nicht vollständig aus. Kopiere sie aus dem Wahoo-Entwicklerportal." };
+  if (!CREDENTIAL.test(secret)) return { ok: false, error: "Das Client-Secret sieht nicht vollständig aus. Kopiere es aus dem Wahoo-Entwicklerportal." };
+  const values = { clientId: id, clientSecret: encrypt(secret), updatedBy: user.id, updatedAt: new Date() };
+  getDb().insert(providerApps).values({ provider: "wahoo", ...values }).onConflictDoUpdate({ target: providerApps.provider, set: values }).run();
+  revalidatePath("/devices");
+  return { ok: true, message: "Wahoo-App gespeichert." };
+}
+
+export async function removeWahooApp(): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!isInstallationOwner(user)) return { ok: false, error: "Nur der Besitzer dieser Installation kann die Wahoo-App entfernen." };
+  getDb().delete(providerApps).where(eq(providerApps.provider, "wahoo")).run();
+  revalidatePath("/devices");
+  return { ok: true, message: "Wahoo-App entfernt." };
 }

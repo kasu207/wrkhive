@@ -36,8 +36,20 @@ await page.getByLabel("Name").fill("E2E Test");
 await page.getByLabel("E-Mail").fill(email);
 await page.getByLabel("Passwort").fill("sehr-sicheres-passwort");
 await page.getByRole("button", { name: "Konto erstellen" }).click();
-await page.waitForURL("**/dashboard**");
-check("Konto erstellt", true, email);
+await page.waitForURL("**/welcome**");
+check("Konto erstellt, Onboarding startet", true, email);
+
+// 1b. Onboarding: apps, thresholds, recommended route
+await page.getByRole("button", { name: /Wahoo/ }).click();
+await page.getByRole("button", { name: /MyWhoosh/ }).click();
+await page.getByRole("button", { name: "Weiter" }).click();
+await page.getByLabel("FTP (Rad)").fill("250");
+await page.getByRole("button", { name: "Weiter" }).click();
+const recText = await page.locator("main").innerText();
+check("Onboarding: Weg für Wahoo direkt und MyWhoosh über intervals.icu", /Direkt als geplantes Workout auf den ELEMNT/.test(recText) && /MyWhoosh-Kalender/.test(recText));
+await page.getByRole("button", { name: /Verbindungen einrichten/ }).click();
+await page.waitForURL("**/devices?setup=1");
+check("Onboarding abgeschlossen", true);
 
 // 2. Connect both providers via OAuth (mock consent redirects straight back)
 for (const [provider, label] of [
@@ -73,6 +85,11 @@ check("wahoo → app: Historie per API abgerufen", (await page.getByText("Sonnta
 check("wahoo → app: geplante Workouts ohne Ergebnis ignoriert", (await page.getByText("Geplantes Workout").count()) === 0);
 
 check("intervals.icu → app: Aktivitäten abgerufen", (await page.getByText("Rolle – Sweet Spot ERG").count()) > 0 && (await page.getByText("Intervalle am Dienstag").count()) > 0);
+check("MyWhoosh-Doppelupload zusammengeführt", (await page.getByText("MyWhoosh – Sweet Spot").count()) === 1);
+await page.goto(`${APP}/activities?app=mywhoosh`);
+check("Filter nach Quell-App (MyWhoosh)", (await page.getByText("MyWhoosh – Sweet Spot").count()) === 1 && (await page.getByText("Watopia Flat").count()) === 0);
+await page.goto(`${APP}/activities?app=zwift`);
+check("Zwift-Fahrt als Zwift erkannt", (await page.getByText("Watopia Flat").count()) === 1);
 
 // 4. Garmin backfill arrives asynchronously via push + ping
 await page.waitForTimeout(6000);

@@ -2,6 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { deviceConnections } from "@/db/schema";
+import { autoAdaptAll } from "./adapt";
 import { syncConnection } from "./sync";
 
 const globalScheduler = globalThis as unknown as { __wrkhiveScheduler?: NodeJS.Timeout };
@@ -36,6 +37,9 @@ export function startSyncScheduler() {
       const results = await syncAllConnections();
       const inserted = results.reduce((a, r) => a + r.inserted, 0);
       if (results.length) console.log(`[wrkhive] background sync: ${results.length} connection(s), ${inserted} new activities`);
+      // After fresh data: adapt today's workouts for athletes with the automatic mode.
+      const adapted = autoAdaptAll();
+      if (adapted) console.log(`[wrkhive] adapted ${adapted} planned workout(s) to the current load`);
     } catch (e) {
       console.error("[wrkhive] background sync failed", e);
     }

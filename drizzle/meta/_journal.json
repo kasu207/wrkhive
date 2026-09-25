@@ -15,6 +15,20 @@
       "when": 1790359299958,
       "tag": "0001_oauth_return_to",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790363218350,
+      "tag": "0002_apps_adaptation",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790363904896,
+      "tag": "0003_provider_apps",
+      "breakpoints": true
     }
   ]
 }

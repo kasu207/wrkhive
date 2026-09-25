@@ -30,31 +30,46 @@ Danach **http://localhost:3000** öffnen. Beim ersten Start dauert der Build ein
 
 Das Image ist ein schlanker Node-22-Container mit Health-Check (`/api/health`), läuft als unprivilegierter Nutzer und wendet Datenbank-Migrationen beim Start automatisch an. Ein Hintergrund-Sync holt alle 30 Minuten neue Aktivitäten (`SYNC_INTERVAL_MINUTES`).
 
-## Garmin-Uhr und Wahoo-Radcomputer synchronisieren
+## Geräte und Apps verbinden
 
-Es gibt drei Wege, sortiert nach Aufwand für den einzelnen Nutzer:
+Unter **Geräte** („Apps & Geräte“) zeigt Wrkhive für jede App, woher die Aktivitäten kommen und wohin die Workouts gehen. Neue Konten durchlaufen ein kurzes Onboarding: Apps auswählen, Schwellenwerte eintragen, und Wrkhive schlägt die kleinste Zahl an Verbindungen vor, die alles abdeckt.
 
-| Weg | Wrkhive → Gerät | Gerät → Wrkhive | Voraussetzung |
-| --- | --- | --- | --- |
-| **intervals.icu als Brücke** | Senden-Klick, Workout ist nach dem nächsten Geräte-Sync auf Uhr bzw. ELEMNT | automatisch alle 30 Minuten | eigenes (kostenloses) intervals.icu-Konto pro Nutzer, einmal mit Garmin und Wahoo verknüpft |
-| **Hersteller-APIs direkt** | Senden-Klick | automatisch per Webhook | Freigabe im Garmin-Partnerprogramm bzw. Wahoo-Entwicklerzugang für die Installation, öffentliche HTTPS-Adresse |
-| **Dateien** | FIT per USB (nur Garmin) | FIT/ZIP-Upload | nichts |
+| App / Gerät | Workouts dorthin | Aktivitäten von dort |
+| --- | --- | --- |
+| **Wahoo ELEMNT** | direkt (eigene Wahoo-App, siehe unten) oder über intervals.icu | direkt oder über intervals.icu |
+| **Garmin** | direkt (Garmin-Partnerprogramm), über intervals.icu oder FIT per USB | direkt, über intervals.icu oder FIT-Import |
+| **Zwift** | über intervals.icu (offizielle Zwift-Anbindung) oder ZWO-Datei | über intervals.icu oder FIT-Import |
+| **MyWhoosh** | über intervals.icu (offizielle MyWhoosh-Anbindung) | über intervals.icu |
+| **ROUVY** | über intervals.icu („Workout of the day“) oder ZWO-Upload im Webportal | über intervals.icu |
+| **Freeletics** | nicht möglich (keine Schnittstelle) | Apple Health / Health Connect, per Companion-App nach intervals.icu |
 
-Für eine private Installation ist intervals.icu der Weg mit den wenigsten Brüchen: keine Partnerfreigabe, kein Tunnel, keine Webhooks. Für ein öffentliches Produkt mit vielen Nutzern sind die Hersteller-APIs der richtige Weg, weil dann niemand ein weiteres Konto braucht.
+Jede Aktivität trägt ihre Quell-App (Filter in „Aktivitäten“). Kommt dieselbe Einheit mehrfach an, etwa vom ELEMNT über Wahoo und von MyWhoosh über intervals.icu, oder lädt MyWhoosh eine Fahrt doppelt hoch, führt Wrkhive sie zusammen: gleiche Sportart, Start innerhalb von 5 Minuten. Fehlende Werte werden ergänzt (Leistung aus der Trainings-App, Puls von der Uhr), die Belastung wird neu berechnet.
 
-### Weg 1: intervals.icu als Brücke (empfohlen ohne Partnerzugang)
+**Strava** ist bewusst nicht angebunden: Seit Juni 2026 braucht jeder Entwickler ein bezahltes Strava-Abo für den API-Zugang, die API-Bedingungen verbieten die Nutzung der Daten in KI-Anwendungen (Wrkhive hat einen KI-Coach), und für die genannten Apps gibt es über intervals.icu bzw. direkt einen Weg ohne Strava.
 
-[intervals.icu](https://intervals.icu) ist eine kostenlose Trainingsplattform mit offizieller Anbindung an Garmin Connect und Wahoo. Wrkhive schreibt Workouts in den intervals.icu-Kalender; intervals.icu überträgt die geplanten Workouts der nächsten 7 Tage an Garmin Connect und an die Wahoo-Cloud, von dort landen sie auf Uhr, Edge oder ELEMNT. Aktivitäten fließen denselben Weg zurück.
+### Wahoo ELEMNT direkt (empfohlen für Wahoo)
 
-Einmalige Einrichtung pro Nutzer:
+Wahoo gibt Workouts nur an registrierte Apps weiter. Für den eigenen Gebrauch reicht eine kostenlose persönliche App im **Sandbox-Modus**: sofort nutzbar, ohne Prüfung durch Wahoo, bis zu 250 API-Abfragen am Tag (genug für Senden und Abgleich alle 30 Minuten). Die Einrichtung läuft komplett in Wrkhive:
 
-1. Konto bei intervals.icu anlegen, unter **Settings** Garmin Connect und Wahoo verbinden und bei beiden **„Upload planned workouts“** aktivieren.
-2. In intervals.icu unter **Settings → Developer Settings** die Athleten-ID (`i123456`) ablesen und einen API-Schlüssel erzeugen.
-3. In Wrkhive unter **Geräte → „Mit intervals.icu verbinden“** beides eintragen. Der Schlüssel wird verschlüsselt gespeichert.
+1. **Geräte → Wahoo → „Wahoo einrichten“.** Der Dialog zeigt die Redirect-URI und die Scopes zum Kopieren.
+2. Im [Wahoo-Entwicklerportal](https://developers.wahooligan.com/) registrieren, unter **My Apps → Add a new app**: Typ *Confidential*, Umgebung *Sandbox*, Redirect-URI und Scopes einfügen.
+3. Client-ID und Client-Secret in den Dialog kopieren, **„Speichern und verbinden“**, bei Wahoo zustimmen.
 
-Danach im Workout **„An Gerät senden“ → intervals.icu**, Datum wählen, senden. Unterstützt werden Rad- und Lauf-Workouts mit Leistung (% FTP), Puls (% LTHR), Pace (% Schwellenpace) und Trittfrequenz; die Ziele löst intervals.icu mit den dort hinterlegten Schwellenwerten auf. Krafttraining und Schritte mit Runden-Taste gehen weiterhin nur über die Garmin-API bzw. als FIT-Datei.
+Danach landen Workouts mit einem Klick auf dem ELEMNT (geplant für heute bis 6 Tage). Die Einrichtung darf nur das erste Konto der Installation vornehmen; weitere Konten verbinden ihr Wahoo-Konto dann mit einem Klick. Das Secret wird verschlüsselt gespeichert. Sind `WAHOO_CLIENT_ID`/`WAHOO_CLIENT_SECRET` gesetzt, haben diese Vorrang. Nimmt Wahoo eine `http://localhost`-Adresse als Redirect-URI nicht an, den HTTPS-Tunnel einrichten (siehe unten) und die `https://`-Adresse verwenden.
 
-Hinweis: Jeder Wrkhive-Nutzer braucht dafür ein eigenes intervals.icu-Konto; der API-Schlüssel gilt nur für das eigene Konto. Ist zusätzlich Garmin oder Wahoo direkt verbunden, erkennt Wrkhive Aktivitäten, die doppelt ankommen.
+### intervals.icu als Brücke (für Zwift, MyWhoosh, ROUVY, Freeletics)
+
+[intervals.icu](https://intervals.icu) ist kostenlos und offiziell mit Zwift, MyWhoosh, ROUVY, Garmin und Wahoo verbunden. Wrkhive schreibt Workouts in den intervals.icu-Kalender und liest die Aktivitäten zurück; bedient wird alles in Wrkhive.
+
+1. Konto bei intervals.icu anlegen, E-Mail-Adresse bestätigen, unter **Settings** die gewünschten Apps verbinden (bei Garmin und Wahoo **„Upload planned workouts“** aktivieren; in MyWhoosh und ROUVY intervals.icu unter den Verbindungen der jeweiligen App hinzufügen).
+2. In intervals.icu unter **Settings → Developer Settings** die Athleten-ID (`i123456`) ablesen und einen persönlichen API-Schlüssel erzeugen. Das ist kein Antrag: Die Bewerbung mit Website und Datenschutzerklärung gilt nur für OAuth-Apps, die andere Nutzer anbinden wollen, nicht für den Zugriff auf das eigene Konto.
+3. In Wrkhive unter **Geräte → „Mit intervals.icu verbinden“** beides eintragen.
+
+Unterstützt werden Rad- und Lauf-Workouts mit Leistung (% FTP), Puls (% LTHR), Pace (% Schwellenpace) und Trittfrequenz. Jeder Wrkhive-Nutzer braucht sein eigenes intervals.icu-Konto.
+
+### Workouts an die Belastung anpassen
+
+Wrkhive bewertet täglich die Form im Verhältnis zur Fitness (TSB in Prozent der CTL) und die Steigerungsrate. Bei hoher Ermüdung (unter -30 %) werden harte Einheiten kürzer und 5 % leichter (weniger Wiederholungen oder kürzere Blöcke), bei sehr hoher Ermüdung (unter -40 %) durch eine lockere Einheit ersetzt; lockere Einheiten bleiben unverändert. Auf der Übersicht erscheint dazu ein Vorschlag mit einem Klick zum Übernehmen, das Original lässt sich jederzeit wiederherstellen. Im Automatikmodus (Onboarding oder Einstellungen) passiert das morgens von selbst, aber nie für Workouts, die schon an ein Gerät gesendet wurden.
 
 ### Indoor mit Smart-Trainer (ERG)
 
@@ -66,7 +81,7 @@ Ein Wahoo ELEMNT (BOLT, ROAM, ACE) steuert Rollentrainer anderer Hersteller übe
 
 **Van Rysel D500 / D900:** Decathlon bestätigt für Firmware 104 einen Fehler, bei dem ERG über ANT+ mit Radcomputern abbricht. Firmware vorher mit der App **OneLap Fit** aktualisieren. Erkennt der ELEMNT den Trainer danach nur als Leistungsmesser und nicht als Smart-Trainer, fehlt die FE-C-Steuerung; dann das Workout als **ZWO** in Zwift fahren (Steuerung per Bluetooth FTMS) und den ELEMNT nur aufzeichnen lassen.
 
-### Weg 2: Hersteller-APIs direkt
+### Garmin und Wahoo über die Hersteller-APIs (Server-Konfiguration)
 
 | Richtung | Garmin | Wahoo |
 | --- | --- | --- |
@@ -99,12 +114,12 @@ Was du dafür brauchst:
 
 Ohne Zugangsdaten laufen die Verbindungen im klar gekennzeichneten **Demo-Modus** mit Beispieldaten.
 
-### Weg 3: Dateien, ohne API-Zugang
+### Dateien, ohne API-Zugang
 
 | Richtung | Garmin (z. B. Forerunner, fēnix, Edge) | Wahoo (ELEMNT BOLT, ROAM, ACE) |
 | --- | --- | --- |
 | **Gerät → Wrkhive** | Aktivitäten unter **Aktivitäten → „FIT-Dateien importieren“** hochladen: direkt vom Gerät per USB (Ordner `GARMIN/Activity`) oder aus Garmin Connect über **Aktivität → Zahnrad → „Original exportieren“** (ZIP, wird direkt verarbeitet) | In der ELEMNT-App den Verlauf öffnen, die Fahrt teilen und die **.fit**-Datei speichern. Dann in Wrkhive importieren |
-| **Wrkhive → Gerät** | Workout öffnen → **„An Gerät senden“ → „FIT-Workout“** herunterladen und per USB in den Ordner `GARMIN/NewFiles` kopieren. Die Uhr zeigt es unter **Training → Workouts** an. Unter macOS brauchen neuere Uhren (MTP) z. B. [OpenMTP](https://openmtp.ganeshrvel.com/) | Strukturierte Workouts gelangen nur über die Wahoo-Cloud aufs ELEMNT, also über Weg 1 oder 2 |
+| **Wrkhive → Gerät** | Workout öffnen → **„An Gerät senden“ → „FIT-Workout“** herunterladen und per USB in den Ordner `GARMIN/NewFiles` kopieren. Die Uhr zeigt es unter **Training → Workouts** an. Unter macOS brauchen neuere Uhren (MTP) z. B. [OpenMTP](https://openmtp.ganeshrvel.com/) | Strukturierte Workouts gelangen nur über die Wahoo-Cloud aufs ELEMNT, also direkt oder über intervals.icu |
 
 Der Import erkennt Duplikate (erneuter Import derselben Datei, dieselbe Einheit aus zwei Quellen), berechnet Normalized Power, Pulszonen und Trainingsbelastung und rekonstruiert unvollständige Aufzeichnungen, etwa wenn der Akku leer war.
 
@@ -116,7 +131,7 @@ Ein mitgelieferter **Anbieter-Simulator** bildet die Garmin-, Wahoo- und interva
 docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build
 ```
 
-Dann unter http://localhost:3000 ein Konto anlegen und unter **Geräte** die Anbieter verbinden (intervals.icu im Simulator: Athleten-ID `i424242`, API-Schlüssel `mock-intervals-key`). Workouts lassen sich senden, und simulierte Aktivitäten treffen ein. Die automatisierte Prüfung beider Richtungen (27 Checks) läuft mit:
+Dann unter http://localhost:3000 ein Konto anlegen und unter **Geräte** die Anbieter verbinden (intervals.icu im Simulator: Athleten-ID `i424242`, API-Schlüssel `mock-intervals-key`). Workouts lassen sich senden, und simulierte Aktivitäten treffen ein. Die automatisierte Prüfung beider Richtungen (32 Checks, inklusive Onboarding, Quell-Apps und MyWhoosh-Doppelupload) läuft mit:
 
 ```bash
 npm install
@@ -132,7 +147,9 @@ APP=http://localhost:3000 WAHOO_WEBHOOK_TOKEN=mock-wahoo-webhook-token npm run t
 | **Workout-Builder** | Visueller Editor (Drag & Drop, Wiederholungsblöcke, Zonen-Schnellwahl, Trittfrequenz) und **Text-Schnelleingabe**, beide immer synchron. Live-Profil mit Zonenfarben, Dauer, Distanz, TSS und IF. Rückgängig/Wiederholen, Tastenkürzel (Strg+S, Strg+Z). |
 | **Text-Notation** | `Aufwärmen 10min 50-65%`, `5x (3min 110%, Erholung 2min 55%)`, `6x (400m 4:00/km, 90s Pause)`, `3x10 Kniebeuge (Langhantel) 60kg Pause 2min`. Versteht h/min/s/km/m, %, W, Pace, bpm, Z1 bis Z7, GA1/GA2/KB/EB/SB, RPE und rpm. |
 | **Senden an Geräte** | Garmin Connect (Workout plus Kalender), Wahoo (Plan plus geplantes Workout, auf Wunsch als Rollentrainer-Einheit mit ERG-Hinweisen) und intervals.icu (Kalender, weiter an Garmin und Wahoo). Export als **FIT** (offizielles Garmin FIT SDK), **ZWO** (Zwift) und Text. |
-| **Aktivitäten** | Dauer-Sync (Webhooks und Abruf), FIT/ZIP-Import, Duplikaterkennung, Normalized Power, Pulszonen, TSS nach Leistung, Pace oder Puls. |
+| **Aktivitäten** | Dauer-Sync (Webhooks und Abruf), FIT/ZIP-Import, Quell-App je Aktivität (Garmin, Wahoo, Zwift, MyWhoosh, ROUVY, Freeletics …) mit Filter, Zusammenführen doppelter Aufzeichnungen, Normalized Power, Pulszonen, TSS nach Leistung, Pace oder Puls. |
+| **Apps & Geräte** | Übersicht aller Apps mit Datenfluss und Status, Onboarding mit Empfehlung der nötigen Verbindungen, Einrichtungs-Checkliste auf der Übersicht. |
+| **Anpassung an Belastung** | Tägliche Bereitschaft aus Form und Steigerungsrate, Vorschlag oder automatische Anpassung des Workouts des Tages, Original wiederherstellbar. |
 | **Krafttraining** | 50 Übungen mit FIT- bzw. Garmin-Übungs-IDs, damit Uhren Animationen und Wiederholungszählung zeigen. Sätze, Wiederholungen, Gewicht, Pausen. |
 | **KI-Coach** | Chat für spontane Workouts auf Basis der aktuellen Form. Planassistent für periodisierte Pläne (Grundlage, Aufbau, Spitze, Tapering, 3:1-Entlastung), mit einem Klick in den Kalender. Nutzt Claude (`ANTHROPIC_API_KEY`); ohne Schlüssel arbeitet ein regelbasierter Coach. |
 | **Kalender** | 4-Wochen-Ansicht, Drag & Drop, geplante und absolvierte Einheiten, Wochensummen (Soll/Ist/Planziel), automatisches Abhaken bei passender Aktivität. |
@@ -194,12 +211,13 @@ Workouts speichern Intensitäten **relativ** zu den Schwellenwerten (% FTP, % Sc
 
 ## Tests
 
-- `npm test`: 146 Unit- und Integrationstests, u. a.:
+- `npm test`: 169 Unit- und Integrationstests, u. a.:
   - Parser und Exporter; FIT-Workouts werden mit dem offiziellen Garmin-Decoder zurückgelesen
   - FIT-Aktivitätsimport inklusive NP, Pulszonen, ZIP und defekter Aufzeichnungen
   - Belastungsmodelle gegen die Daniels-Tabellen
   - Sync mit echter SQLite-Datenbank und Coach mit gemocktem Claude
-- `npm run test:e2e`: 27 End-to-End-Prüfungen des Syncs in beide Richtungen gegen den Anbieter-Simulator, im Browser und im Docker-Container
+- `npm run test:e2e:wahoo-setup`: 8 Prüfungen der Wahoo-Einrichtung über die Oberfläche (App ohne `WAHOO_CLIENT_ID` starten, `WAHOO_API_BASE`/`WAHOO_AUTHORIZE_URL` auf den Simulator)
+- `npm run test:e2e`: 32 End-to-End-Prüfungen des Syncs in beide Richtungen gegen den Anbieter-Simulator, im Browser und im Docker-Container
 
 ## Betrieb
 

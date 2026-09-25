@@ -1,16 +1,21 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNotNull, max } from "drizzle-orm";
 import { Bike, FileDown, Upload } from "lucide-react";
 import { ImportButton } from "@/components/import-button";
 import type { Metadata } from "next";
+import { AppHub } from "@/components/devices/app-hub";
 import { DeviceCard } from "@/components/devices/device-card";
 import { Card, PageHeader } from "@/components/ui/card";
 import { getDb } from "@/db";
 import { activities, deliveries, deviceConnections } from "@/db/schema";
 import { missingPermissions } from "@/lib/permissions";
-import { requireUser } from "@/lib/server/auth";
+import type { AppInfo } from "@/lib/apps";
+import { isInstallationOwner, requireUser } from "@/lib/server/auth";
+import { redirectUri } from "@/lib/server/connections";
+import { env } from "@/lib/server/env";
+import { WAHOO_SCOPES } from "@/lib/server/providers/wahoo";
 import { PROVIDERS } from "@/lib/server/sync";
 
-export const metadata: Metadata = { title: "Geräte" };
+export const metadata: Metadata = { title: "Apps & Geräte" };
 
 const FEATURES = {
   garmin: [
@@ -20,19 +25,19 @@ const FEATURES = {
   ],
   wahoo: [
     "Workouts erscheinen auf ELEMNT BOLT, ROAM, ACE und RIVAL",
-    "Rad und Laufen, geplant für heute bis 6 Tage im Voraus",
-    "Aktivitäten werden automatisch importiert (Webhook)",
+    "Rollentrainer-Workouts steuern den Smart-Trainer im ERG-Modus",
+    "Aktivitäten werden automatisch importiert",
   ],
   intervals: [
-    "Workouts landen im intervals.icu-Kalender und gehen von dort an Garmin Connect und Wahoo",
-    "Rad-Workouts mit Leistungszielen steuern den Smart-Trainer über den Radcomputer im ERG-Modus",
-    "Aktivitäten von Garmin und Wahoo kommen über intervals.icu zurück, Duplikate werden erkannt",
+    "Brücke zu Zwift, MyWhoosh, ROUVY und Freeletics (über Apple Health)",
+    "Workouts gehen über intervals.icu auch an Garmin Connect und Wahoo",
+    "Aktivitäten aller dort verbundenen Apps kommen zurück, Duplikate werden zusammengeführt",
   ],
 } as const;
 
 const INTRO = {
   intervals:
-    "Der schnellste Weg ohne eigenen Garmin- oder Wahoo-Entwicklerzugang: Verbinde in intervals.icu (kostenlos) einmal Garmin Connect und Wahoo, aktiviere dort jeweils „Upload planned workouts“ und hinterlege hier deinen persönlichen API-Schlüssel.",
+    "Nur nötig für Zwift, MyWhoosh, ROUVY oder Freeletics. Kostenloses intervals.icu-Konto anlegen, dort die Apps verbinden und hier den persönlichen API-Schlüssel aus Settings > Developer Settings eintragen (erscheint nach bestätigter E-Mail-Adresse). Eine Bewerbung oder eigene Website ist dafür nicht nötig.",
 } as Partial<Record<"garmin" | "wahoo" | "intervals", string>>;
 
 export default async function DevicesPage(props: PageProps<"/devices">) {
@@ -41,10 +46,13 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
   const db = getDb();
   const conns = db.select().from(deviceConnections).where(eq(deviceConnections.userId, user.id)).all();
   const error = typeof sp.error === "string" ? sp.error : null;
+  const owner = isInstallationOwner(user);
+  const wahooEnv = env.wahoo();
+  const selfService = { allowed: owner, source: wahooEnv.source, redirectUri: redirectUri("wahoo"), scopes: WAHOO_SCOPES };
 
-  // Without own Garmin/Wahoo API credentials the intervals.icu bridge is the way to real devices: show it first.
-  const direct = PROVIDERS.garmin.isConfigured() || PROVIDERS.wahoo.isConfigured();
-  const order = direct ? (["garmin", "wahoo", "intervals"] as const) : (["intervals", "garmin", "wahoo"] as const);
+  // Direct device connections first (Wahoo before Garmin for ELEMNT riders), the app bridge last.
+  const mine = new Set(user.apps ?? []);
+  const order = (["wahoo", "garmin", "intervals"] as const).slice().sort((a, b) => Number(mine.has(b)) - Number(mine.has(a)) || 0);
   const cards = order.map((p) => {
     const c = conns.find((x) => x.provider === p);
     const adapter = PROVIDERS[p];
@@ -53,6 +61,7 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
       name: adapter.name,
       auth: adapter.auth,
       intro: INTRO[p],
+      selfService: p === "wahoo" ? selfService : undefined,
       devices: adapter.devices,
       features: [...FEATURES[p]],
       configured: adapter.isConfigured(),
@@ -72,19 +81,45 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
     };
   });
 
+  // Last activity per source app, for the hub.
+  const lastSeen = Object.fromEntries(
+    db
+      .select({ app: activities.sourceApp, last: max(activities.startTime) })
+      .from(activities)
+      .where(and(eq(activities.userId, user.id), isNotNull(activities.sourceApp)))
+      .groupBy(activities.sourceApp)
+      .all()
+      .filter((r) => r.last)
+      .map((r) => [r.app, (r.last as Date).getTime()]),
+  ) as Partial<Record<AppInfo["id"], number>>;
+  const hubConns = conns.filter((c) => c.status !== "revoked").map((c) => ({ provider: c.provider, live: c.mode === "live" }));
+
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Geräte" description="Verbinde deine Konten, um Workouts direkt zu senden und Aktivitäten dauerhaft zu synchronisieren." />
+      <PageHeader title="Apps & Geräte" description="Alle Quellen an einem Ort: woher deine Aktivitäten kommen und wohin deine Workouts gehen." />
       {error ? (
         <div className="mb-5 rounded-xl border border-[#f2caca] bg-critical-soft px-4 py-3 text-[14px] text-critical-ink" role="alert">
           Die Verbindung konnte nicht hergestellt werden: {error}
         </div>
       ) : null}
-      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        {cards.map((c) => (
-          <DeviceCard key={c.provider} {...c} />
-        ))}
-      </div>
+
+      <section aria-labelledby="hub-title">
+        <h2 id="hub-title" className="mb-3 text-[13px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+          Deine Apps
+        </h2>
+        <AppHub selected={user.apps ?? []} conns={hubConns} lastSeen={lastSeen} />
+      </section>
+
+      <section aria-labelledby="conn-title" className="mt-8">
+        <h2 id="conn-title" className="mb-3 text-[13px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+          Verbindungen
+        </h2>
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          {cards.map((c) => (
+            <DeviceCard key={c.provider} {...c} />
+          ))}
+        </div>
+      </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card className="flex flex-col p-5">

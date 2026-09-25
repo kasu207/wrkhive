@@ -133,6 +133,7 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
       calories: Math.round((np * movingSec) / 1000 / 1.05),
       hrZoneSec: hrZones(movingSec, avgHr, a.lthr, r),
       deviceName: "Demo-Gerät",
+      sourceApp: "demo",
     };
   }
 
@@ -166,6 +167,7 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
       calories: Math.round((distanceM / 1000) * 68),
       hrZoneSec: hrZones(movingSec, avgHr, a.lthr, r),
       deviceName: "Demo-Gerät",
+      sourceApp: "demo",
     };
   }
 
@@ -183,6 +185,7 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
     calories: Math.round(durationSec / 60 * 6.5),
     hrZoneSec: hrZones(durationSec, avgHr, a.lthr, r),
     deviceName: "Demo-Gerät",
+    sourceApp: "demo",
   };
 }
 

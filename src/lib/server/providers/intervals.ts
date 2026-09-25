@@ -1,4 +1,5 @@
 import "server-only";
+import { detectSourceApp, type SourceAppId } from "@/lib/apps";
 import { encodeIntervalsWorkout, intervalsCompatibility, intervalsMovingTime, INTERVALS_SPORT_TYPE } from "@/lib/workout/export/intervals";
 import { providerFetch } from "./http";
 import { ProviderError, type NormalizedActivity, type ProviderAdapter } from "./types";
@@ -77,8 +78,23 @@ export interface IntervalsActivity {
   average_speed?: number | null;
   calories?: number | null;
   device_name?: string | null;
+  /** Where intervals.icu got the activity from, e.g. GARMIN_CONNECT, WAHOO, ZWIFT, OAUTH_CLIENT, UPLOAD. */
   source?: string;
+  /** Name of the uploading app for source OAUTH_CLIENT (e.g. MyWhoosh, ROUVY). */
+  oauth_client_name?: string | null;
 }
+
+const SOURCE: Record<string, SourceAppId> = {
+  GARMIN_CONNECT: "garmin",
+  WAHOO: "wahoo",
+  ZWIFT: "zwift",
+  STRAVA: "strava",
+  COROS: "coros",
+  POLAR: "polar",
+  SUUNTO: "suunto",
+  UPLOAD: "file",
+  DROPBOX: "file",
+};
 
 const pos = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
 const posInt = (v: unknown): number | null => {
@@ -116,7 +132,8 @@ export function normalizeIntervalsActivity(a: IntervalsActivity): NormalizedActi
     avgCadence: posInt(a.average_cadence),
     avgSpeed: pos(a.average_speed),
     calories: posInt(a.calories),
-    deviceName: a.device_name?.trim() || "intervals.icu",
+    deviceName: a.device_name?.trim() || a.oauth_client_name?.trim() || "intervals.icu",
+    sourceApp: detectSourceApp({ hints: [a.device_name, a.oauth_client_name], name: a.name, fallback: a.source ? (SOURCE[a.source] ?? null) : null }),
   };
 }
 

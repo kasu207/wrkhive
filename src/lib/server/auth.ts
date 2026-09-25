@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gt, lt } from "drizzle-orm";
+import { and, asc, eq, gt, lt } from "drizzle-orm";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -82,4 +82,14 @@ export async function requireApiUser(): Promise<User> {
 
 export function thresholdsOf(user: Pick<User, "ftp" | "lthr" | "maxHr" | "thresholdPace">) {
   return { ftp: user.ftp, lthr: user.lthr, maxHr: user.maxHr, thresholdPace: user.thresholdPace };
+}
+
+/**
+ * The installation owner (first registered, non-demo account) may enter
+ * installation-wide settings such as a self-registered Wahoo app.
+ */
+export function isInstallationOwner(user: Pick<User, "id" | "isDemo">): boolean {
+  if (user.isDemo) return false;
+  const first = getDb().select({ id: users.id }).from(users).where(eq(users.isDemo, false)).orderBy(asc(users.createdAt), asc(users.id)).limit(1).get();
+  return first?.id === user.id;
 }

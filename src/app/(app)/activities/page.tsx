@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, type SQL } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ActivityDetail } from "@/components/activity-detail";
@@ -9,6 +9,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { getDb } from "@/db";
 import { activities } from "@/db/schema";
+import { SOURCE_APP_LABEL, SOURCE_APPS, type SourceAppId } from "@/lib/apps";
 import { cn } from "@/lib/cn";
 import { displayDate } from "@/lib/dates";
 import { formatDistance, formatDuration, formatNumber } from "@/lib/format";
@@ -27,12 +28,25 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
   const user = await requireUser();
   const sp = await props.searchParams;
   const sport = typeof sp.sport === "string" && ["ride", "run", "strength"].includes(sp.sport) ? (sp.sport as "ride" | "run" | "strength") : null;
+  const app = typeof sp.app === "string" && (SOURCE_APPS as readonly string[]).includes(sp.app) ? (sp.app as SourceAppId) : null;
   const limit = Math.min(2000, Math.max(50, Number(sp.limit) || 100));
   const db = getDb();
+  const where: SQL[] = [eq(activities.userId, user.id)];
+  if (sport) where.push(eq(activities.sport, sport));
+  if (app) where.push(eq(activities.sourceApp, app));
+  // Apps that actually delivered activities, for the source filter.
+  const apps = db
+    .selectDistinct({ app: activities.sourceApp })
+    .from(activities)
+    .where(and(eq(activities.userId, user.id), isNotNull(activities.sourceApp)))
+    .all()
+    .map((r) => r.app as SourceAppId)
+    .filter((a) => a in SOURCE_APP_LABEL && a !== "demo")
+    .sort((a, b) => SOURCE_APP_LABEL[a].localeCompare(SOURCE_APP_LABEL[b], "de"));
   const rows = db
     .select()
     .from(activities)
-    .where(sport ? and(eq(activities.userId, user.id), eq(activities.sport, sport)) : eq(activities.userId, user.id))
+    .where(and(...where))
     .orderBy(desc(activities.startTime))
     .limit(limit + 1)
     .all();
@@ -48,7 +62,7 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
   }
   const q = (params: Record<string, string | null>) => {
     const u = new URLSearchParams();
-    const merged = { sport, ...params };
+    const merged = { sport, app, ...params };
     for (const [k, v] of Object.entries(merged)) if (v) u.set(k, String(v));
     const s = u.toString();
     return s ? `/activities?${s}` : "/activities";
@@ -78,6 +92,24 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
             </Link>
           );
         })}
+        {apps.length > 1 ? (
+          <>
+            <span className="mx-1 hidden h-9 w-px bg-border sm:block" aria-hidden />
+            {apps.map((a) => (
+              <Link
+                key={a}
+                href={q({ app: app === a ? null : a })}
+                aria-pressed={app === a}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full border px-3.5 text-[13px] font-medium transition-colors",
+                  app === a ? "border-ink bg-ink text-white" : "border-border-strong bg-surface text-ink-2 hover:text-ink",
+                )}
+              >
+                {SOURCE_APP_LABEL[a]}
+              </Link>
+            ))}
+          </>
+        ) : null}
       </div>
 
       {list.length ? (
@@ -115,8 +147,8 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
       ) : (
         <Card>
           <EmptyState
-            title="Noch keine Aktivitäten"
-            description="Verbinde Garmin oder Wahoo für den Dauer-Sync, oder importiere FIT-Dateien direkt von Uhr und Radcomputer."
+            title={sport || app ? "Keine passenden Aktivitäten" : "Noch keine Aktivitäten"}
+            description="Verbinde deine Geräte und Apps für den Dauer-Sync oder importiere FIT-Dateien direkt von Uhr und Radcomputer."
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <ButtonLink href="/devices">Gerät verbinden</ButtonLink>

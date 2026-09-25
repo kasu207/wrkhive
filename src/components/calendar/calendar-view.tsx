@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, Plus, Search, Send, SkipForward, Trash2, Undo2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Plus, Search, Send, SkipForward, Sparkles, Trash2, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -24,6 +24,8 @@ export interface CalWorkout {
   date: string;
   status: "planned" | "done" | "skipped";
   planId: string | null;
+  /** Adapted to the athlete's load (the original can be restored). */
+  adapted: boolean;
   workout: { id: string; name: string; description: string; sport: Sport; structure: WorkoutStructure; durationSec: number; tss: number };
 }
 
@@ -252,7 +254,11 @@ export function CalendarView({
                             <div className="flex items-center gap-1.5">
                               <span className="size-2 shrink-0 rounded-full" style={{ background: SPORT_COLOR[it.workout.sport] }} />
                               <span className={cn("truncate text-[12px] font-semibold", it.status === "skipped" && "line-through")}>{it.workout.name}</span>
-                              {it.status === "done" ? <Check className="ml-auto size-3.5 shrink-0 text-good-ink" /> : null}
+                              {it.status === "done" ? (
+                                <Check className="ml-auto size-3.5 shrink-0 text-good-ink" />
+                              ) : it.adapted ? (
+                                <Sparkles className="ml-auto size-3.5 shrink-0 text-brand-ink" aria-label="angepasst" />
+                              ) : null}
                             </div>
                             <div className="mt-0.5 text-[11px] text-ink-3 tabular">
                               {formatDuration(it.workout.durationSec, { compact: true })} · {it.workout.tss} TSS
@@ -348,6 +354,7 @@ export function CalendarView({
               </span>
               {detail.status === "done" ? <Badge tone="good">Erledigt</Badge> : detail.status === "skipped" ? <Badge>Ausgelassen</Badge> : null}
               {detail.planId ? <Badge tone="brand">Aus Trainingsplan</Badge> : null}
+              {detail.adapted ? <Badge tone="info">An Belastung angepasst</Badge> : null}
             </div>
             <WorkoutChart structure={detail.workout.structure} thresholds={thresholds} height={170} />
             {detail.workout.description ? <p className="mt-3 text-[14px] leading-relaxed text-ink-2">{detail.workout.description}</p> : null}

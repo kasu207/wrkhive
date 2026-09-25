@@ -7,6 +7,7 @@ import { deviceConnections, workouts } from "@/db/schema";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
 import { starterStructure } from "@/lib/workout/edit";
 import type { Sport } from "@/lib/workout/types";
+import { connectionPreference } from "@/lib/apps";
 
 export async function generateMetadata(props: PageProps<"/workouts/[id]">): Promise<Metadata> {
   const { id } = await props.params;
@@ -29,7 +30,9 @@ export default async function WorkoutPage(props: PageProps<"/workouts/[id]">) {
     .from(deviceConnections)
     .where(eq(deviceConnections.userId, user.id))
     .all()
-    .map((c) => ({ provider: c.provider, mode: c.mode, status: c.status, displayName: c.displayName }));
+    .map((c) => ({ provider: c.provider, mode: c.mode, status: c.status, displayName: c.displayName }))
+    // The athlete's own device first, so the send dialog preselects it.
+    .sort((a, b) => connectionPreference(user.apps).indexOf(a.provider) - connectionPreference(user.apps).indexOf(b.provider));
 
   if (id === "new") {
     const { sport: sportParam } = await props.searchParams;
@@ -46,9 +49,11 @@ export default async function WorkoutPage(props: PageProps<"/workouts/[id]">) {
 
   const w = db.select().from(workouts).where(and(eq(workouts.id, id), eq(workouts.userId, user.id))).get();
   if (!w) notFound();
+  const { send } = await props.searchParams;
   return (
     <WorkoutBuilder
       resetKey={w.id}
+      openSend={send === "1"}
       initial={{ id: w.id, name: w.name, description: w.description, structure: w.structure }}
       thresholds={thresholdsOf(user)}
       connections={connections}

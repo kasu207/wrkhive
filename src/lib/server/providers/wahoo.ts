@@ -1,4 +1,5 @@
 import "server-only";
+import { detectSourceApp } from "@/lib/apps";
 import { diffDays } from "@/lib/dates";
 import { encodeWahooPlan, wahooCompatibility, wahooMinutes } from "@/lib/workout/export/wahoo";
 import { env } from "../env";
@@ -78,6 +79,7 @@ export function normalizeWahooWorkout(w: WahooWorkout): NormalizedActivity | nul
     avgSpeed: speed,
     calories: roundOrNull(num(s.calories_accum)),
     deviceName: "Wahoo",
+    sourceApp: detectSourceApp({ name: w.name, fallback: "wahoo" }),
   };
 }
 

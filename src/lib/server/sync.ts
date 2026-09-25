@@ -6,6 +6,7 @@ import { activityLoad, effectiveVo2max } from "@/lib/analytics/load";
 import { addDays, type ISODate } from "@/lib/dates";
 import { newId } from "@/lib/id";
 import { decrypt, encrypt } from "./crypto";
+import { detectSourceApp, isTrainingApp, type SourceAppId } from "@/lib/apps";
 import { generateDemoActivities } from "./providers/demo";
 import { garminAdapter } from "./providers/garmin";
 import { intervalsAdapter } from "./providers/intervals";
@@ -69,23 +70,39 @@ function markError(connectionId: string, e: unknown) {
     .run();
 }
 
+/** Metrics a duplicate from another source may fill in when the kept record lacks them. */
+const MERGEABLE = ["movingSec", "distanceM", "elevationGainM", "avgHr", "maxHr", "avgPower", "normPower", "avgCadence", "avgSpeed", "calories", "hrZoneSec"] as const;
+
+/** Two recordings are the same session when sport matches and they start within this window. */
+const DUPLICATE_WINDOW_MS = 5 * 60_000;
+
 /**
- * Inserts or updates activities, derives training load, skips duplicates that
- * another provider already delivered (same sport, start within 5 minutes) and
- * marks matching planned workouts as done.
+ * Inserts or updates activities and derives training load.
+ *
+ * The same session often arrives more than once: from several sources (the
+ * ELEMNT via Wahoo and the MyWhoosh ride via intervals.icu) or repeatedly
+ * from one source with new ids (MyWhoosh uploads rides to intervals.icu
+ * multiple times). Recordings of the same sport starting within 5 minutes
+ * are merged into the first record: missing metrics (e.g. power from the
+ * trainer app, heart rate from the watch) are filled in, the training app
+ * is preferred as the source, and the load is recomputed. Matching planned
+ * workouts are marked as done.
  */
-export function upsertActivities(user: User, conn: { id: string | null; provider: ProviderId | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number } {
+export function upsertActivities(user: User, conn: { id: string | null; provider: ProviderId | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number; merged: number } {
   const db = getDb();
   let inserted = 0;
   let updated = 0;
+  let merged = 0;
   const touchedDates = new Set<ISODate>();
   const model = { ftp: user.ftp, lthr: user.lthr, maxHr: user.maxHr, restHr: user.restHr, thresholdPace: user.thresholdPace };
+  const vo2Of = (a: Pick<NormalizedActivity, "sport" | "distanceM" | "movingSec" | "durationSec" | "avgHr">) =>
+    a.sport === "run" && a.distanceM ? effectiveVo2max({ distanceM: a.distanceM, durationSec: a.movingSec ?? a.durationSec, avgHr: a.avgHr }, user.maxHr) : null;
 
   db.transaction((tx) => {
     for (const a of list) {
       const date = localDate(a.startTime, user.timeZone, a.utcOffsetSec);
       const load = activityLoad(a, model);
-      const vo2 = a.sport === "run" && a.distanceM ? effectiveVo2max({ distanceM: a.distanceM, durationSec: a.movingSec ?? a.durationSec, avgHr: a.avgHr }, user.maxHr) : null;
+      const sourceApp = a.sourceApp ?? detectSourceApp({ hints: [a.deviceName], name: a.name, fallback: conn.provider === "manual" ? "file" : null });
       const values = {
         sport: a.sport,
         name: a.name.slice(0, 120),
@@ -105,8 +122,9 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
         tss: load.tss,
         tssMethod: load.method,
         hrZoneSec: a.hrZoneSec ?? null,
-        vo2maxEst: vo2,
+        vo2maxEst: vo2Of(a),
         deviceName: a.deviceName ?? null,
+        sourceApp,
       };
 
       const existing = tx
@@ -121,21 +139,37 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
         continue;
       }
 
-      const window = 5 * 60_000;
       const duplicate = tx
-        .select({ id: activities.id })
+        .select()
         .from(activities)
         .where(
           and(
             eq(activities.userId, user.id),
-            ne(activities.provider, conn.provider),
             eq(activities.sport, a.sport),
-            gte(activities.startTime, new Date(a.startTime.getTime() - window)),
-            lte(activities.startTime, new Date(a.startTime.getTime() + window)),
+            gte(activities.startTime, new Date(a.startTime.getTime() - DUPLICATE_WINDOW_MS)),
+            lte(activities.startTime, new Date(a.startTime.getTime() + DUPLICATE_WINDOW_MS)),
           ),
         )
         .get();
-      if (duplicate) continue;
+      if (duplicate) {
+        const patch: Partial<typeof activities.$inferInsert> = {};
+        for (const k of MERGEABLE) {
+          if ((duplicate[k] === null || duplicate[k] === undefined) && values[k] !== null && values[k] !== undefined) (patch as Record<string, unknown>)[k] = values[k];
+        }
+        if (isTrainingApp(sourceApp) && !isTrainingApp(duplicate.sourceApp as SourceAppId | null)) patch.sourceApp = sourceApp;
+        else if (!duplicate.sourceApp && sourceApp) patch.sourceApp = sourceApp;
+        if (Object.keys(patch).length) {
+          const combined = { ...duplicate, ...patch };
+          const l = activityLoad(combined, model);
+          tx.update(activities)
+            .set({ ...patch, tss: l.tss, tssMethod: l.method, vo2maxEst: vo2Of(combined) ?? duplicate.vo2maxEst })
+            .where(eq(activities.id, duplicate.id))
+            .run();
+          merged++;
+          touchedDates.add(duplicate.date);
+        }
+        continue;
+      }
 
       const res = tx
         .insert(activities)
@@ -148,7 +182,7 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
   });
 
   if (touchedDates.size) matchPlannedWorkouts(user.id, [...touchedDates]);
-  return { inserted, updated };
+  return { inserted, updated, merged };
 }
 
 /** Marks planned workouts as done when an activity of the same sport exists on that day. */

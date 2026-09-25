@@ -10,6 +10,7 @@ import { addDays, isISODate, startOfWeek } from "@/lib/dates";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
 import { todayFor } from "@/lib/server/sync";
 import { activitiesBetween, scheduledBetween } from "@/lib/server/training";
+import { connectionPreference } from "@/lib/apps";
 
 export const metadata: Metadata = { title: "Kalender" };
 
@@ -37,7 +38,13 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
     .where(and(eq(workouts.userId, user.id), ne(workouts.source, "plan")))
     .orderBy(desc(workouts.favorite), desc(workouts.updatedAt))
     .all();
-  const connections = db.select().from(deviceConnections).where(eq(deviceConnections.userId, user.id)).all();
+  const pref = connectionPreference(user.apps);
+  const connections = db
+    .select()
+    .from(deviceConnections)
+    .where(eq(deviceConnections.userId, user.id))
+    .all()
+    .sort((a, b) => pref.indexOf(a.provider) - pref.indexOf(b.provider));
 
   return (
     <div className="animate-fade-up">
@@ -60,6 +67,7 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
           date: s.date,
           status: s.status,
           planId: s.planId,
+          adapted: Boolean(s.originalWorkoutId),
           workout: { id: w.id, name: w.name, description: w.description, sport: w.sport, structure: w.structure, durationSec: w.durationSec, tss: w.tss },
         }))}
         acts={acts.map((a) => ({

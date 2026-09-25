@@ -46,7 +46,20 @@ interface Initial {
 
 type Mode = "visual" | "text";
 
-export function WorkoutBuilder({ initial, thresholds, connections, resetKey }: { initial: Initial; thresholds: Thresholds; connections: ConnectionInfo[]; resetKey: string }) {
+export function WorkoutBuilder({
+  initial,
+  thresholds,
+  connections,
+  resetKey,
+  openSend = false,
+}: {
+  initial: Initial;
+  thresholds: Thresholds;
+  connections: ConnectionInfo[];
+  resetKey: string;
+  /** Open the send dialog right away (e.g. to re-send an adapted workout). */
+  openSend?: boolean;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [id, setId] = useState(initial.id);
@@ -66,7 +79,7 @@ export function WorkoutBuilder({ initial, thresholds, connections, resetKey }: {
   const [text, setText] = useState("");
   const [textErrors, setTextErrors] = useState<ParseIssue[]>([]);
   const [saving, startSaving] = useTransition();
-  const [sendOpen, setSendOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(openSend && initial.id !== null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sport = structure.sport;

@@ -31,12 +31,12 @@ const PROVIDER_META = {
   wahoo: { name: "Wahoo", devices: "ELEMNT BOLT, ROAM, ACE, RIVAL", note: "Erscheint nach dem nächsten Sync auf deinem ELEMNT bzw. RIVAL. Wahoo zeigt geplante Workouts von heute bis 6 Tage im Voraus." },
   intervals: {
     name: "intervals.icu",
-    devices: "Weiter an Garmin und Wahoo",
-    note: "Landet im intervals.icu-Kalender. intervals.icu überträgt die geplanten Workouts der nächsten 7 Tage an Garmin Connect und Wahoo, wenn dort „Upload planned workouts“ aktiviert ist.",
+    devices: "Weiter an Zwift, MyWhoosh, ROUVY, Garmin, Wahoo",
+    note: "Landet im intervals.icu-Kalender und von dort in den Apps und Geräten, die du in intervals.icu verbunden hast: Zwift, MyWhoosh und ROUVY sowie Garmin und Wahoo mit „Upload planned workouts“ (nächste 7 Tage).",
   },
 } as const;
 
-const PROVIDER_ORDER: Provider[] = ["garmin", "wahoo", "intervals"];
+
 
 type When = "today" | "tomorrow" | "date" | "library";
 
@@ -61,6 +61,8 @@ export function SendDialog({
   const today = toISODate(new Date());
   const connected = connections.filter((c) => c.status !== "revoked");
   const [provider, setProvider] = useState<Provider | null>(connected[0]?.provider ?? null);
+  // Connections arrive sorted by the athlete's preference; unconnected providers follow.
+  const providerOrder: Provider[] = [...connections.map((c) => c.provider), ...(["wahoo", "garmin", "intervals"] as const).filter((p) => !connections.some((c) => c.provider === p))];
   const isRide = structure.sport === "ride";
   // Default to the trainer when every step has a power target (ERG ready).
   const [indoor, setIndoor] = useState(() => isRide && ergCheck(structure).withoutPower === 0);
@@ -141,7 +143,7 @@ export function SendDialog({
         <section>
           <h3 className="mb-2.5 text-[13px] font-semibold text-ink-2">Gerät</h3>
           <div className="grid gap-2 sm:grid-cols-3">
-            {PROVIDER_ORDER.map((p) => {
+            {providerOrder.map((p) => {
               const conn = connections.find((c) => c.provider === p);
               const usable = conn && conn.status !== "revoked";
               const active = provider === p && usable;

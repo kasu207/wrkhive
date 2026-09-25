@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, lt } from "drizzle-orm";
 import { getDb } from "@/db";
-import { deviceConnections, oauthStates, type User } from "@/db/schema";
+import { activities, deviceConnections, oauthStates, type User } from "@/db/schema";
 import { newId } from "@/lib/id";
 import { encrypt, pkcePair, randomToken } from "./crypto";
 import { env } from "./env";
@@ -54,6 +54,8 @@ export async function createConnection(
   let id: string;
   if (existing) {
     id = existing.id;
+    // Demo data must never mix with the real account's history.
+    if (existing.mode === "demo" && values.mode === "live") db.delete(activities).where(eq(activities.connectionId, id)).run();
     db.update(deviceConnections)
       .set({ ...values, status: "connected", statusMessage: null, lastSyncAt: null })
       .where(eq(deviceConnections.id, id))

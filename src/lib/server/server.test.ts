@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wrkhive-test-"));
@@ -36,6 +37,7 @@ const { upsertActivities, syncConnection, todayFor } = await import("./sync");
 const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
 const { pmcFor } = await import("./training");
+const { adaptScheduled, autoAdaptToday, readinessFor, restoreScheduled } = await import("./adapt");
 
 function makeUser(id: string) {
   const db = getDb();
@@ -81,6 +83,27 @@ describe("activities sync (demo provider)", () => {
     expect(b.inserted).toBe(0);
   });
 
+  it("merges repeated uploads and fills in metrics from another source", () => {
+    const db = getDb();
+    db.insert(schema.deviceConnections).values({ id: "c-icu", userId: user.id, provider: "intervals", mode: "live" }).run();
+    const start = new Date("2024-03-10T17:00:00Z");
+    // ELEMNT recording via Wahoo: heart rate, no power meter on the bike.
+    upsertActivities(user, { id: "c1", provider: "wahoo" }, [
+      { externalId: "w-indoor", sport: "ride", name: "Indoor", startTime: start, durationSec: 3600, avgHr: 140, deviceName: "Wahoo", sourceApp: "wahoo" },
+    ]);
+    // MyWhoosh uploads the same ride twice to intervals.icu (with trainer power).
+    const mw = { sport: "ride" as const, name: "MyWhoosh – Sweet Spot", startTime: new Date(start.getTime() + 40_000), durationSec: 3550, avgPower: 210, normPower: 220, sourceApp: "mywhoosh" as const };
+    const r1 = upsertActivities(user, { id: "c-icu", provider: "intervals" }, [{ ...mw, externalId: "i1" }]);
+    const r2 = upsertActivities(user, { id: "c-icu", provider: "intervals" }, [{ ...mw, externalId: "i2" }]);
+    expect(r1).toMatchObject({ inserted: 0, merged: 1 });
+    expect(r2).toMatchObject({ inserted: 0 });
+    const rows = db.select().from(schema.activities).all().filter((x) => x.userId === user.id && x.date === "2024-03-10");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ provider: "wahoo", avgHr: 140, normPower: 220, sourceApp: "mywhoosh", tssMethod: "power" });
+    // Load now comes from power: (220/250)^2 * 100 for one hour.
+    expect(rows[0].tss).toBeCloseTo(77.4, 1);
+  });
+
   it("marks a planned workout as done when a matching activity arrives", () => {
     const db = getDb();
     const date = "2026-02-03";
@@ -94,6 +117,84 @@ describe("activities sync (demo provider)", () => {
     const s = db.select().from(schema.scheduledWorkouts).all().find((x) => x.id === "s-match")!;
     expect(s.status).toBe("done");
     expect(s.activityId).toBeTruthy();
+  });
+});
+
+describe("adaptation to load", () => {
+  const db = () => getDb();
+  let user: ReturnType<typeof makeUser>;
+  const vo2 = {
+    sport: "ride" as const,
+    nodes: [
+      { id: "a", type: "step" as const, kind: "warmup" as const, duration: { type: "time" as const, seconds: 900 }, target: { type: "power" as const, low: 50, high: 70 } },
+      {
+        id: "r",
+        type: "repeat" as const,
+        count: 5,
+        steps: [
+          { id: "b", type: "step" as const, kind: "active" as const, duration: { type: "time" as const, seconds: 240 }, target: { type: "power" as const, low: 110, high: 118 } },
+          { id: "c", type: "step" as const, kind: "recovery" as const, duration: { type: "time" as const, seconds: 240 }, target: { type: "power" as const, low: 50, high: 50 } },
+        ],
+      },
+    ],
+  };
+
+  beforeAll(() => {
+    user = makeUser("u-adapt");
+    // Moderate base for 6 weeks, then a brutal last week: deep fatigue.
+    const today = todayFor(user);
+    const list = [];
+    for (let d = 42; d >= 1; d--) {
+      const date = new Date(`${today}T06:00:00Z`);
+      date.setUTCDate(date.getUTCDate() - d);
+      list.push({ externalId: `x${d}`, sport: "ride" as const, name: "Fahrt", startTime: date, durationSec: d <= 7 ? 3 * 3600 : 3600, normPower: d <= 7 ? 225 : 170 });
+    }
+    upsertActivities(user, { id: null, provider: "manual" }, list);
+    db().update(schema.users).set({ autoAdapt: true }).where(eq(schema.users.id, "u-adapt")).run();
+    user = db().select().from(schema.users).all().find((u) => u.id === "u-adapt")!;
+  });
+
+  it("judges readiness from recent load", () => {
+    const r = readinessFor(user)!;
+    expect(r.formPct).toBeLessThan(-40);
+    expect(r.mode).toBe("recover");
+  });
+
+  it("adapts today's workout automatically, restores the original, and leaves sent ones alone", () => {
+    const today = todayFor(user);
+    db().insert(schema.workouts).values({ id: "w-vo2", userId: user.id, name: "VO2max 5x4", sport: "ride", structure: vo2, tss: 80 }).run();
+    db().insert(schema.scheduledWorkouts).values({ id: "s-today", userId: user.id, workoutId: "w-vo2", date: today }).run();
+
+    expect(autoAdaptToday(user)).toBe(1);
+    const s = db().select().from(schema.scheduledWorkouts).all().find((x) => x.id === "s-today")!;
+    expect(s.originalWorkoutId).toBe("w-vo2");
+    expect(s.workoutId).not.toBe("w-vo2");
+    expect(s.adaptNote).toMatch(/lockere Einheit/i);
+    const adapted = db().select().from(schema.workouts).all().find((w) => w.id === s.workoutId)!;
+    expect(adapted.source).toBe("plan");
+    expect(adapted.tss).toBeLessThan(80);
+    // Idempotent.
+    expect(autoAdaptToday(user)).toBe(0);
+    expect(adaptScheduled(user, "s-today").ok).toBe(false);
+
+    const r = restoreScheduled(user, "s-today");
+    expect(r).toEqual({ ok: true, resendTo: [] });
+    const back = db().select().from(schema.scheduledWorkouts).all().find((x) => x.id === "s-today")!;
+    expect(back).toMatchObject({ workoutId: "w-vo2", originalWorkoutId: null, adaptNote: null });
+    expect(db().select().from(schema.workouts).all().some((w) => w.id === s.workoutId)).toBe(false);
+
+    // Once sent to a device, the automatic mode keeps its hands off.
+    db().insert(schema.deliveries).values({ id: "d1", userId: user.id, workoutId: "w-vo2", provider: "wahoo", status: "sent", scheduledDate: today }).run();
+    expect(autoAdaptToday(user)).toBe(0);
+    // A manual adaptation reports where to re-send.
+    const manual = adaptScheduled(user, "s-today");
+    expect(manual.ok && manual.resendTo).toEqual(["Wahoo"]);
+  });
+
+  it("only adapts today's workouts", () => {
+    db().insert(schema.scheduledWorkouts).values({ id: "s-later", userId: user.id, workoutId: "w-vo2", date: "2099-01-01" }).run();
+    const r = adaptScheduled(user, "s-later");
+    expect(r.ok).toBe(false);
   });
 });
 

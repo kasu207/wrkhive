@@ -1,4 +1,5 @@
 import type { DeviceConnection, User } from "@/db/schema";
+import type { SourceAppId } from "@/lib/apps";
 import type { WorkoutStructure } from "@/lib/workout/types";
 
 export type ProviderId = "garmin" | "wahoo" | "intervals";
@@ -24,6 +25,8 @@ export interface NormalizedActivity {
   calories?: number | null;
   hrZoneSec?: number[] | null;
   deviceName?: string | null;
+  /** App or device the activity was recorded with (see lib/apps.ts). */
+  sourceApp?: SourceAppId | null;
 }
 
 export interface TokenSet {

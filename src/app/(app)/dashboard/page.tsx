@@ -1,8 +1,10 @@
-import { and, count, eq, gte } from "drizzle-orm";
-import { ArrowRight, CalendarDays, CheckCircle2, CircleAlert, Plus, TrendingDown, TrendingUp, Watch } from "lucide-react";
+import { and, count, eq, gte, isNull, ne, or } from "drizzle-orm";
+import { ArrowRight, CalendarDays, CheckCircle2, CircleAlert, Plus, TrendingDown, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ActivityRow } from "@/components/activity-row";
+import { AdaptStrip } from "@/components/adapt-strip";
 import { SportTile } from "@/components/brand";
 import { PmcChart } from "@/components/charts/pmc-chart";
 import { VolumeChart } from "@/components/charts/volume-chart";
@@ -12,9 +14,12 @@ import { ButtonLink } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { WorkoutSparkline } from "@/components/workout/workout-chart";
 import { getDb } from "@/db";
-import { activities, deviceConnections } from "@/db/schema";
+import { activities, deliveries, deviceConnections, workouts } from "@/db/schema";
+import { cn } from "@/lib/cn";
 import { addDays, displayDate, startOfWeek } from "@/lib/dates";
 import { formatDayLong, formatDuration, formatNumber, relativeTime } from "@/lib/format";
+import { adaptWorkout } from "@/lib/workout/adapt";
+import { autoAdaptToday, readinessFor } from "@/lib/server/adapt";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
 import { PROVIDERS, todayFor } from "@/lib/server/sync";
 import { activitiesBetween, pmcFor, recentActivities, runningFitness, scheduledBetween, weeklyVolume } from "@/lib/server/training";
@@ -28,18 +33,24 @@ function greeting(timeZone: string) {
   return "Guten Abend";
 }
 
-function formState(tsb: number): { label: string; text: string; tone: "good" | "info" | "warning" | "critical" } {
-  if (tsb > 25) return { label: "Sehr frisch", text: "Du bist ausgeruht. Bleibt die Belastung länger so niedrig, sinkt deine Fitness.", tone: "info" };
-  if (tsb > 5) return { label: "Frisch", text: "Beste Voraussetzungen für harte Intervalle oder einen Wettkampf.", tone: "good" };
-  if (tsb > -10) return { label: "Ausgeglichen", text: "Belastung und Erholung halten sich die Waage.", tone: "good" };
-  if (tsb > -30) return { label: "Produktiv ermüdet", text: "Hier entsteht Trainingswirkung. Plane die nächste Entlastung ein.", tone: "warning" };
+/** Form relative to fitness, on the same scale as the readiness model (analytics/readiness.ts). */
+function formState(formPct: number): { label: string; text: string; tone: "good" | "info" | "warning" | "critical" } {
+  if (formPct > 25) return { label: "Sehr frisch", text: "Du bist ausgeruht. Bleibt die Belastung länger so niedrig, sinkt deine Fitness.", tone: "info" };
+  if (formPct > 5) return { label: "Frisch", text: "Beste Voraussetzungen für harte Intervalle oder einen Wettkampf.", tone: "good" };
+  if (formPct > -10) return { label: "Ausgeglichen", text: "Belastung und Erholung halten sich die Waage.", tone: "good" };
+  if (formPct >= -30) return { label: "Produktiv ermüdet", text: "Hier entsteht Trainingswirkung. Plane die nächste Entlastung ein.", tone: "warning" };
+  if (formPct >= -40) return { label: "Stark belastet", text: "Die Ermüdung ist hoch. Harte Einheiten besser etwas kürzer und leichter.", tone: "warning" };
   return { label: "Überlastungsrisiko", text: "Sehr hohe Ermüdung. Ein paar lockere Tage bringen dich zurück.", tone: "critical" };
 }
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  if (!user.onboardedAt && !user.isDemo) redirect("/welcome");
   const db = getDb();
   const t = thresholdsOf(user);
+  // Automatic mode: adapt today's not yet sent workouts before rendering them.
+  autoAdaptToday(user);
+  const readiness = readinessFor(user);
   const today = todayFor(user);
   const pmc = pmcFor(user, 365);
   const now = pmc[pmc.length - 1];
@@ -61,7 +72,24 @@ export default async function DashboardPage() {
   for (const a of activitiesBetween(user.id, addDays(today, -27), today)) a.hrZoneSec?.forEach((s, i) => (zoneSec[i] += s));
 
   const hasData = activityCount > 0;
-  const form = now && hasData ? formState(now.tsb) : null;
+  // Activation checklist (hidden for the demo and once everything is done).
+  const setup = user.isDemo
+    ? null
+    : (() => {
+        const live = connections.some((c) => c.mode === "live" && c.status !== "revoked");
+        const realActivities = db.select({ n: count() }).from(activities).where(and(eq(activities.userId, user.id), or(isNull(activities.sourceApp), ne(activities.sourceApp, "demo")))).get()?.n ?? 0;
+        const built = db.select({ n: count() }).from(workouts).where(and(eq(workouts.userId, user.id), ne(workouts.source, "plan"))).get()?.n ?? 0;
+        const sent = db.select({ n: count() }).from(deliveries).where(and(eq(deliveries.userId, user.id), eq(deliveries.status, "sent"))).get()?.n ?? 0;
+        const steps = [
+          { label: "Apps und Geräte verbinden", hint: "Wahoo, Garmin oder intervals.icu", href: "/devices", done: live },
+          { label: "Aktivitäten synchronisiert", hint: "Kommen nach dem Verbinden automatisch", href: "/activities", done: realActivities > 0 },
+          { label: "Erstes Workout gebaut", hint: "Selbst, aus einer Vorlage oder vom Coach", href: "/workouts/new", done: built > 0 },
+          { label: "Workout aufs Gerät gesendet", hint: "Im Workout auf „An Gerät senden“", href: "/workouts", done: sent > 0 },
+        ];
+        return { steps, done: steps.filter((x) => x.done).length };
+      })();
+  const formPct = now ? Math.round((now.tsb / Math.max(now.ctl, 20)) * 100) : 0;
+  const form = now && hasData ? formState(formPct) : null;
   const ctlDelta = now && weekAgo ? now.ctl - weekAgo.ctl : 0;
   const weekStart = startOfWeek(today);
   const weekDays = Math.min(7, Math.round((Date.parse(today) - Date.parse(weekStart)) / 86_400_000) + 1);
@@ -87,18 +115,36 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {!connections.length ? (
-        <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-brand-soft text-brand-ink">
-            <Watch className="size-5" />
-          </span>
-          <div className="flex-1">
-            <h2 className="text-[15px] font-semibold">Verbinde Garmin oder Wahoo</h2>
-            <p className="mt-0.5 text-[14px] text-ink-2">Dann landen deine Workouts mit einem Klick auf dem Gerät und deine Aktivitäten fließen automatisch in diese Übersicht.</p>
+      {setup && setup.done < setup.steps.length ? (
+        <Card className="p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[15px] font-semibold">Einrichtung</h2>
+            <span className="text-[13px] text-ink-3 tabular">
+              {setup.done} von {setup.steps.length} erledigt
+            </span>
           </div>
-          <ButtonLink href="/devices" variant="primary">
-            Gerät verbinden
-          </ButtonLink>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full rounded-full bg-good transition-[width]" style={{ width: `${(setup.done / setup.steps.length) * 100}%` }} />
+          </div>
+          <ol className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {setup.steps.map((st) => (
+              <li key={st.label}>
+                <Link
+                  href={st.href}
+                  className={cn(
+                    "flex h-full items-start gap-2.5 rounded-xl border p-3 text-[13px] transition-colors",
+                    st.done ? "border-transparent bg-good-soft/60 text-ink-2" : "border-border hover:border-border-strong hover:bg-surface-2/50",
+                  )}
+                >
+                  {st.done ? <CheckCircle2 className="mt-px size-4 shrink-0 text-good-ink" /> : <span className="mt-px size-4 shrink-0 rounded-full border-2 border-border-strong" />}
+                  <span>
+                    <span className={cn("block font-medium", st.done ? "text-ink-2" : "text-ink")}>{st.label}</span>
+                    {!st.done ? <span className="block text-ink-3">{st.hint}</span> : null}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
         </Card>
       ) : null}
 
@@ -116,29 +162,40 @@ export default async function DashboardPage() {
           <div className="flex flex-1 flex-col px-5 pb-5 pt-3">
             {todays.length ? (
               <div className="space-y-3">
-                {todays.map(({ scheduled, workout }) => (
-                  <Link key={scheduled.id} href={`/workouts/${workout.id}`} className="block rounded-xl border border-border p-3.5 transition-colors hover:border-border-strong hover:bg-surface-2/50">
-                    <div className="flex items-center gap-3">
-                      <SportTile sport={workout.sport} />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[15px] font-semibold">{workout.name}</div>
-                        <div className="text-[13px] text-ink-3 tabular">
-                          {formatDuration(workout.durationSec, { compact: true })} · {workout.tss} TSS
+                {todays.map(({ scheduled, workout }) => {
+                  const suggestion =
+                    scheduled.status === "planned" && !scheduled.originalWorkoutId && readiness && readiness.mode !== "keep" ? adaptWorkout(workout.structure, readiness.mode, t) : null;
+                  return (
+                    <div key={scheduled.id}>
+                      <Link href={`/workouts/${workout.id}`} className="block rounded-xl border border-border p-3.5 transition-colors hover:border-border-strong hover:bg-surface-2/50">
+                        <div className="flex items-center gap-3">
+                          <SportTile sport={workout.sport} />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[15px] font-semibold">{workout.name}</div>
+                            <div className="text-[13px] text-ink-3 tabular">
+                              {formatDuration(workout.durationSec, { compact: true })} · {workout.tss} TSS
+                            </div>
+                          </div>
+                          {scheduled.status === "done" ? (
+                            <Badge tone="good">
+                              <CheckCircle2 /> Erledigt
+                            </Badge>
+                          ) : (
+                            <Badge tone="neutral">Geplant</Badge>
+                          )}
                         </div>
-                      </div>
-                      {scheduled.status === "done" ? (
-                        <Badge tone="good">
-                          <CheckCircle2 /> Erledigt
-                        </Badge>
-                      ) : (
-                        <Badge tone="neutral">Geplant</Badge>
-                      )}
+                        <div className="mt-3">
+                          <WorkoutSparkline structure={workout.structure} thresholds={t} height={38} />
+                        </div>
+                      </Link>
+                      {scheduled.originalWorkoutId && scheduled.adaptNote && scheduled.status === "planned" ? (
+                        <AdaptStrip scheduledId={scheduled.id} workoutId={workout.id} state="adapted" note={scheduled.adaptNote} reason="" />
+                      ) : suggestion && readiness ? (
+                        <AdaptStrip scheduledId={scheduled.id} workoutId={workout.id} state="suggest" note={suggestion.note} reason={readiness.advice} />
+                      ) : null}
                     </div>
-                    <div className="mt-3">
-                      <WorkoutSparkline structure={workout.structure} thresholds={t} height={38} />
-                    </div>
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="flex min-h-[150px] flex-1 flex-col items-start justify-center gap-3 rounded-xl bg-surface-2/70 p-5">
@@ -189,9 +246,15 @@ export default async function DashboardPage() {
           </div>
           {form && now ? (
             <>
-              <div className="mt-3 text-[52px] font-semibold leading-none tracking-[-0.04em]">
-                {now.tsb > 0 ? "+" : ""}
-                {Math.round(now.tsb)}
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-[52px] font-semibold leading-none tracking-[-0.04em]">
+                  {now.tsb > 0 ? "+" : ""}
+                  {Math.round(now.tsb)}
+                </span>
+                <span className="text-[14px] font-medium text-ink-3 tabular">
+                  {formPct > 0 ? "+" : ""}
+                  {formPct} % der Fitness
+                </span>
               </div>
               <p className="mt-2 text-[14px] leading-relaxed text-ink-2">{form.text}</p>
               <div className="mt-auto grid grid-cols-2 gap-3 pt-5">

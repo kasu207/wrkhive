@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { WahooSetupDialog, type WahooSelfService } from "./wahoo-setup";
 import { Field, Input } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
@@ -19,6 +21,8 @@ export interface DeviceCardProps {
   auth: "oauth" | "apikey";
   /** Optional lead text shown under the header. */
   intro?: string;
+  /** Self-hosted Wahoo setup with a personal developer app. */
+  selfService?: WahooSelfService;
   devices: string[];
   features: string[];
   configured: boolean;
@@ -35,23 +39,7 @@ export interface DeviceCardProps {
   };
 }
 
-function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn("relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50", checked ? "bg-ink" : "bg-surface-3")}
-    >
-      <span className={cn("absolute left-0 top-0.5 size-5 rounded-full bg-white shadow transition-transform", checked ? "translate-x-[18px]" : "translate-x-0.5")} />
-    </button>
-  );
-}
-
-export function DeviceCard({ provider, name, auth, intro, devices, features, configured, connection: c }: DeviceCardProps) {
+export function DeviceCard({ provider, name, auth, intro, selfService, devices, features, configured, connection: c }: DeviceCardProps) {
   const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
@@ -68,6 +56,9 @@ export function DeviceCard({ provider, name, auth, intro, devices, features, con
     });
 
   const [keyForm, setKeyForm] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  // Without app credentials the owner can register a personal app instead of the demo.
+  const canSetup = Boolean(selfService?.allowed && selfService.source !== "env");
   const [athleteId, setAthleteId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [keyError, setKeyError] = useState<string | null>(null);
@@ -190,6 +181,11 @@ export function DeviceCard({ provider, name, auth, intro, devices, features, con
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface-2/60 px-5 py-3">
+            {c.mode === "demo" && canSetup ? (
+              <Button size="sm" onClick={() => (configured ? connect() : setSetupOpen(true))} loading={pending}>
+                Echtes Konto verbinden
+              </Button>
+            ) : null}
             {c.status === "revoked" ? (
               <Button size="sm" onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending}>
                 Neu verbinden
@@ -212,12 +208,36 @@ export function DeviceCard({ provider, name, auth, intro, devices, features, con
         </div>
       ) : (
         <div className="mt-auto border-t border-border bg-surface-2/60 px-5 py-4">
-          <Button onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending && auth !== "apikey"} className="w-full sm:w-auto">
-            Mit {name} verbinden
-          </Button>
-          {!configured && auth === "oauth" ? <p className="mt-2 text-[12px] leading-relaxed text-ink-3">Für diese Installation sind keine {name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.</p> : null}
+          {!configured && canSetup ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={() => setSetupOpen(true)} className="w-full sm:w-auto">
+                {name} einrichten
+              </Button>
+              <Button variant="ghost" onClick={connect} loading={pending}>
+                Demo ansehen
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending && auth !== "apikey"} className="w-full sm:w-auto">
+              Mit {name} verbinden
+            </Button>
+          )}
+          {!configured && auth === "oauth" ? (
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-3">
+              {canSetup
+                ? `Einmalig eine kostenlose persönliche ${name}-App anlegen (etwa 5 Minuten), dann ist dein Konto direkt verbunden.`
+                : `Für diese Installation sind keine ${name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.`}
+            </p>
+          ) : null}
+          {configured && canSetup && selfService?.source === "ui" ? (
+            <button type="button" onClick={() => setSetupOpen(true)} className="mt-2 block text-[12px] font-medium text-ink-3 hover:text-ink">
+              Wahoo-App ändern
+            </button>
+          ) : null}
         </div>
       )}
+
+      {selfService && canSetup ? <WahooSetupDialog open={setupOpen} onClose={() => setSetupOpen(false)} setup={selfService} /> : null}
 
       {auth === "apikey" ? (
         <Dialog

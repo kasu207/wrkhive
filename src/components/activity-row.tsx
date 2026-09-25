@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SportTile } from "@/components/brand";
 import type { Activity } from "@/db/schema";
+import { SOURCE_APP_LABEL, type SourceAppId } from "@/lib/apps";
 import { displayDate } from "@/lib/dates";
 import { formatDateShort, formatDistance, formatDuration, formatPace, formatSpeedKmh, formatWeekday } from "@/lib/format";
 
@@ -21,6 +22,7 @@ export function ActivityRow({ a, href }: { a: Activity; href?: string }) {
         <div className="flex items-baseline justify-between gap-3">
           <span className="truncate text-[14px] font-medium text-ink">{a.name}</span>
           <span className="shrink-0 text-[12px] text-ink-3">
+            {a.sourceApp && a.sourceApp in SOURCE_APP_LABEL && a.sourceApp !== "demo" ? <span className="text-ink-2">{SOURCE_APP_LABEL[a.sourceApp as SourceAppId]} · </span> : null}
             {formatWeekday(displayDate(a.date))}, {formatDateShort(displayDate(a.date))}
           </span>
         </div>

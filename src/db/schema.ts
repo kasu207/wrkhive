@@ -20,6 +20,11 @@ export const users = sqliteTable("users", {
   weightKg: real("weight_kg"),
   timeZone: text("time_zone").notNull().default("Europe/Berlin"),
   isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+  /** Devices and apps the athlete uses (onboarding), see lib/apps.ts. */
+  apps: text("apps", { mode: "json" }).$type<string[]>(),
+  /** Adjust planned, not yet sent workouts to the current load automatically. */
+  autoAdapt: integer("auto_adapt", { mode: "boolean" }).notNull().default(false),
+  onboardedAt: integer("onboarded_at", { mode: "timestamp_ms" }),
   createdAt: createdAt(),
 });
 
@@ -110,6 +115,9 @@ export const scheduledWorkouts = sqliteTable(
       .notNull()
       .default("planned"),
     activityId: text("activity_id"),
+    /** Set when the workout was adapted to the athlete's load: the planned original. */
+    originalWorkoutId: text("original_workout_id").references(() => workouts.id, { onDelete: "set null" }),
+    adaptNote: text("adapt_note"),
     createdAt: createdAt(),
   },
   (t) => [index("scheduled_user_date_idx").on(t.userId, t.date)],
@@ -199,6 +207,8 @@ export const activities = sqliteTable(
     hrZoneSec: text("hr_zone_sec", { mode: "json" }).$type<number[]>(),
     vo2maxEst: real("vo2max_est"),
     deviceName: text("device_name"),
+    /** App or device the activity was recorded with (lib/apps.ts), independent of the sync route. */
+    sourceApp: text("source_app"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -226,6 +236,21 @@ export const coachMessages = sqliteTable(
 export type CoachPayload =
   | { kind: "workout"; workout: { name: string; description: string; sport: "ride" | "run" | "strength"; structure: WorkoutStructure }; savedWorkoutId?: string }
   | { kind: "plan"; plan: import("@/lib/coach/types").PlanProposal; savedPlanId?: string };
+
+/**
+ * API app credentials entered in the UI for self-hosted installs (the
+ * installation owner registers a personal Wahoo developer app). Environment
+ * variables take precedence. The secret is AES-GCM encrypted.
+ */
+export const providerApps = sqliteTable("provider_apps", {
+  provider: text("provider", { enum: ["wahoo"] }).primaryKey(),
+  clientId: text("client_id").notNull(),
+  clientSecret: text("client_secret").notNull(),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
 
 export const oauthStates = sqliteTable("oauth_states", {
   state: text("state").primaryKey(),

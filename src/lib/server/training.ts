@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { activities, scheduledWorkouts, workouts, type User } from "@/db/schema";
 import { performanceChart, predictRaceTime, type PmcPoint } from "@/lib/analytics/load";
+import { readinessFromPmc } from "@/lib/analytics/readiness";
 import { addDays, startOfWeek, type ISODate } from "@/lib/dates";
 import { todayFor } from "./sync";
 
@@ -134,6 +135,8 @@ export function trainingContext(user: User): string {
   if (now) {
     lines.push(`Fitness (CTL) ${now.ctl}, Ermüdung (ATL) ${now.atl}, Form (TSB) ${now.tsb}; CTL vor 7 Tagen ${weekAgo?.ctl ?? "?"}`);
   }
+  const readiness = recent.length >= 3 ? readinessFromPmc(pmc) : null;
+  if (readiness) lines.push(`Bereitschaft: ${readiness.label} (Form ${readiness.formPct} % der Fitness, Rampe ${readiness.ramp} CTL/Woche). ${readiness.advice}`);
   if (fitness) lines.push(`Lauf-VO2max (effektiv) ${fitness.vo2max}`);
   lines.push(
     `Wochenumfang der letzten 6 Wochen (h Rad/Lauf/Kraft, TSS): ${weeks

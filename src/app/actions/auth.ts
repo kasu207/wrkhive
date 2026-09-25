@@ -56,7 +56,7 @@ export async function signup(_: AuthState, form: FormData): Promise<AuthState> {
     .values({ id, email: parsed.data.email, name: parsed.data.name, passwordHash: await hashPassword(parsed.data.password), timeZone: validTimeZone(form.get("timeZone")) })
     .run();
   await createSession(id);
-  redirect("/dashboard?welcome=1");
+  redirect("/welcome");
 }
 
 export async function login(_: AuthState, form: FormData): Promise<AuthState> {
@@ -101,6 +101,9 @@ export async function startDemo(form: FormData) {
       weightKg: 72,
       timeZone,
       isDemo: true,
+      apps: ["garmin", "wahoo", "zwift"],
+      autoAdapt: true,
+      onboardedAt: new Date(),
     })
     .run();
   const user = db.select().from(users).where(eq(users.id, id)).get()!;

@@ -1,13 +1,15 @@
 import { and, eq } from "drizzle-orm";
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { deviceConnections, users, type DeviceConnection } from "@/db/schema";
+import { env } from "@/lib/server/env";
 import { fetchGarminCallback, normalizeGarminActivity, type GarminActivitySummary } from "@/lib/server/providers/garmin";
 import { accessTokenFor, upsertActivities } from "@/lib/server/sync";
 
 /**
- * Garmin Health/Activity API notifications. Configure this URL in the Garmin
- * developer portal for "Activities" (push or ping), "Deregistrations" and
+ * Garmin Health/Activity API notifications. Configure this URL (with
+ * ?token=$GARMIN_WEBHOOK_TOKEN) in the Garmin developer portal for "Activities" (push or ping), "Deregistrations" and
  * "User Permissions Change". Garmin expects a fast 200 response.
  */
 type Ping = { userId: string; callbackURL: string };
@@ -22,6 +24,13 @@ function connectionFor(garminUserId: string): DeviceConnection | undefined {
 }
 
 export async function POST(request: NextRequest) {
+  // Garmin does not sign notifications: require a secret token in the
+  // configured callback URL (…/api/webhooks/garmin?token=…).
+  const expected = env.garmin().webhookToken;
+  const token = request.nextUrl.searchParams.get("token") ?? "";
+  if (!expected || token.length !== expected.length || !timingSafeEqual(Buffer.from(token), Buffer.from(expected))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   let body: Record<string, unknown>;
   try {
     body = await request.json();

@@ -7,6 +7,7 @@ export const env = {
   garmin: () => ({
     clientId: process.env.GARMIN_CLIENT_ID ?? "",
     clientSecret: process.env.GARMIN_CLIENT_SECRET ?? "",
+    webhookToken: process.env.GARMIN_WEBHOOK_TOKEN ?? "",
   }),
   wahoo: () => ({
     clientId: process.env.WAHOO_CLIENT_ID ?? "",

@@ -1,6 +1,7 @@
 "use server";
 
 import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getDb } from "@/db";
@@ -10,6 +11,7 @@ import { newId } from "@/lib/id";
 import { createSession, destroySession, thresholdsOf } from "@/lib/server/auth";
 import { createConnection } from "@/lib/server/connections";
 import { hashPassword, randomToken, verifyPassword } from "@/lib/server/crypto";
+import { rateLimit } from "@/lib/server/rate-limit";
 import { todayFor } from "@/lib/server/sync";
 import { summarize } from "@/lib/workout/metrics";
 import { TEMPLATES } from "@/lib/workout/templates";
@@ -60,6 +62,9 @@ export async function signup(_: AuthState, form: FormData): Promise<AuthState> {
 export async function login(_: AuthState, form: FormData): Promise<AuthState> {
   const parsed = credentials.safeParse({ email: form.get("email"), password: form.get("password") });
   if (!parsed.success) return { error: "E-Mail oder Passwort ist falsch." };
+  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  const limit = rateLimit(`login:${ip}:${parsed.data.email}`, 10, 15 * 60_000);
+  if (!limit.ok) return { error: `Zu viele Versuche. Bitte in ${Math.ceil(limit.retryAfterSec / 60)} Minuten erneut probieren.` };
   const user = getDb().select().from(users).where(eq(users.email, parsed.data.email)).get();
   // Always run the hash comparison to keep timing uniform.
   dummyHash ??= hashPassword(randomToken());
@@ -77,6 +82,8 @@ export async function logout() {
 
 /** Creates a fully populated demo account and signs in. */
 export async function startDemo(form: FormData) {
+  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  if (!rateLimit(`demo:${ip}`, 20, 60 * 60_000).ok) redirect("/login");
   const db = getDb();
   const id = newId();
   const timeZone = validTimeZone(form.get("timeZone"));

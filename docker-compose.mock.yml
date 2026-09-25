@@ -1,0 +1,40 @@
+# Simulierte Garmin- und Wahoo-APIs zum Testen des kompletten Verbindungs-
+# und Sync-Ablaufs ohne echte Entwickler-Zugangsdaten:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build
+#
+# Danach unter http://localhost:3000 ein Konto anlegen und unter "Geräte"
+# Garmin bzw. Wahoo verbinden. Nicht für den echten Betrieb verwenden.
+
+services:
+  wrkhive:
+    environment:
+      GARMIN_CLIENT_ID: garmin-client
+      GARMIN_CLIENT_SECRET: garmin-secret
+      GARMIN_WEBHOOK_TOKEN: mock-garmin-webhook-token
+      # Browser -> Simulator (Anmeldeseite), Server -> Simulator (API)
+      GARMIN_AUTHORIZE_URL: http://localhost:4010/garmin/oauth2Confirm
+      GARMIN_TOKEN_URL: http://mock-providers:4010/garmin/token
+      GARMIN_API_BASE: http://mock-providers:4010/garmin
+      WAHOO_CLIENT_ID: wahoo-client
+      WAHOO_CLIENT_SECRET: wahoo-secret
+      WAHOO_WEBHOOK_TOKEN: mock-wahoo-webhook-token
+      WAHOO_AUTHORIZE_URL: http://localhost:4010/wahoo/oauth/authorize
+      WAHOO_API_BASE: http://mock-providers:4010/wahoo
+    depends_on:
+      - mock-providers
+
+  mock-providers:
+    image: ${NODE_IMAGE:-node:22-bookworm-slim}
+    working_dir: /mock
+    command: ["node", "mock-providers.mjs"]
+    volumes:
+      - ./scripts/mock-providers.mjs:/mock/mock-providers.mjs:ro
+    environment:
+      MOCK_PORT: "4010"
+      MOCK_LOG: /tmp/mock-providers.log.json
+      APP_WEBHOOK_BASE: http://wrkhive:3000
+      MOCK_APP_FACING_BASE: http://mock-providers:4010
+      GARMIN_WEBHOOK_TOKEN: mock-garmin-webhook-token
+    ports:
+      - "4010:4010"

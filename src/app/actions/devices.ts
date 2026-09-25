@@ -2,6 +2,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { getDb } from "@/db";
 import { activities, deviceConnections } from "@/db/schema";
 import { requireUser } from "@/lib/server/auth";
@@ -17,7 +18,12 @@ export async function connectDevice(provider: string): Promise<ActionResult<{ ur
   const user = await requireUser();
   if (!isProvider(provider)) return { ok: false, error: "Unbekannter Anbieter." };
   try {
-    const url = await beginConnect(user, provider);
+    // Remember where the user started, so the callback (which may arrive via
+    // the public APP_URL, e.g. a tunnel) can send them back there.
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") || host?.startsWith("127.") ? "http" : "https");
+    const url = await beginConnect(user, provider, host ? `${proto}://${host}` : null);
     revalidatePath("/devices");
     revalidatePath("/dashboard");
     return { ok: true, data: { url } };

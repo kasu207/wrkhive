@@ -1,0 +1,44 @@
+# Lokaler Betrieb mit Docker Desktop:
+#   docker compose up --build        -> http://localhost:3000
+# Mit öffentlichem Tunnel (für Garmin-Webhooks / OAuth, siehe README):
+#   docker compose --profile tunnel up --build
+
+name: wrkhive
+
+services:
+  wrkhive:
+    build:
+      context: .
+      args:
+        NODE_BUILD_IMAGE: ${NODE_BUILD_IMAGE:-node:22-bookworm}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+    image: wrkhive:local
+    container_name: wrkhive
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      DATABASE_PATH: /data/wrkhive.db
+    volumes:
+      - wrkhive-data:/data
+    restart: unless-stopped
+
+  # Optional: öffentliche HTTPS-Adresse über ngrok (kostenlose statische Domain).
+  # Benötigt NGROK_AUTHTOKEN und NGROK_DOMAIN in .env; APP_URL=https://<NGROK_DOMAIN>.
+  tunnel:
+    image: ngrok/ngrok:3
+    profiles: ["tunnel"]
+    command: ["http", "--url=${NGROK_DOMAIN:-set-NGROK_DOMAIN-in-.env}", "wrkhive:3000"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - wrkhive
+    restart: unless-stopped
+
+volumes:
+  wrkhive-data:

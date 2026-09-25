@@ -46,6 +46,14 @@ export async function POST(request: NextRequest) {
       .run();
   }
 
+  for (const change of (body.userPermissionsChange as { userId: string; permissions?: string[] }[] | undefined) ?? []) {
+    if (!Array.isArray(change.permissions)) continue;
+    db.update(deviceConnections)
+      .set({ scopes: change.permissions.join(" ") })
+      .where(and(eq(deviceConnections.provider, "garmin"), eq(deviceConnections.externalUserId, change.userId)))
+      .run();
+  }
+
   const items = [...((body.activities as ActivityItem[] | undefined) ?? []), ...((body.manuallyUpdatedActivities as ActivityItem[] | undefined) ?? [])];
   const byUser = new Map<string, ActivityItem[]>();
   for (const item of items) {

@@ -234,6 +234,8 @@ export const oauthStates = sqliteTable("oauth_states", {
     .references(() => users.id, { onDelete: "cascade" }),
   provider: text("provider", { enum: ["garmin", "wahoo"] }).notNull(),
   codeVerifier: text("code_verifier").notNull(),
+  /** Origin the user started from (the OAuth redirect may arrive via a public tunnel URL). */
+  returnTo: text("return_to"),
   createdAt: createdAt(),
 });
 

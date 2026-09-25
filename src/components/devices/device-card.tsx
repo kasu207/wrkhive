@@ -27,6 +27,7 @@ export interface DeviceCardProps {
     lastSyncAt: number | null;
     activityCount: number;
     deliveries: number;
+    missingPermissions: string[];
   };
 }
 
@@ -105,6 +106,18 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
         ))}
       </ul>
 
+      {c && c.mode === "live" && c.missingPermissions.length ? (
+        <div className="mx-5 mb-4 rounded-xl border border-[#f5dca6] bg-warning-soft px-3.5 py-2.5 text-[13px] text-warning-ink">
+          <p className="font-medium">Nicht freigegeben:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {c.missingPermissions.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <p className="mt-1">Trenne die Verbindung und verbinde neu, um alle Berechtigungen zu erteilen.</p>
+        </div>
+      ) : null}
+
       {c && c.status !== "connected" && c.statusMessage ? (
         <div className="mx-5 mb-4 flex gap-2 rounded-xl border border-[#f5dca6] bg-warning-soft px-3.5 py-2.5 text-[13px] text-warning-ink">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -117,7 +130,7 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div>
               <div className="text-[14px] font-medium">Dauer-Sync</div>
-              <div className="text-[13px] text-ink-3">Neue Aktivitäten automatisch importieren{c.mode === "live" ? " (per Webhook, stündlich abgeglichen)" : ""}</div>
+              <div className="text-[13px] text-ink-3">Neue Aktivitäten automatisch importieren{c.mode === "live" ? " (per Webhook, zusätzlich alle 30 Minuten abgeglichen)" : ""}</div>
             </div>
             <Switch
               checked={auto}

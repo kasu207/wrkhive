@@ -13,7 +13,7 @@ export function redirectUri(provider: ProviderId) {
 }
 
 /** Starts OAuth for a configured provider, or creates a demo connection. Returns the URL to navigate to. */
-export async function beginConnect(user: User, provider: ProviderId): Promise<string> {
+export async function beginConnect(user: User, provider: ProviderId, returnTo: string | null = null): Promise<string> {
   const adapter = PROVIDERS[provider];
   if (!adapter.isConfigured()) {
     await createConnection(user, provider, { mode: "demo" });
@@ -23,14 +23,14 @@ export async function beginConnect(user: User, provider: ProviderId): Promise<st
   db.delete(oauthStates).where(lt(oauthStates.createdAt, new Date(Date.now() - 30 * 60_000))).run();
   const state = randomToken(24);
   const { verifier, challenge } = pkcePair();
-  db.insert(oauthStates).values({ state, userId: user.id, provider, codeVerifier: verifier }).run();
+  db.insert(oauthStates).values({ state, userId: user.id, provider, codeVerifier: verifier, returnTo }).run();
   return adapter.authorizeUrl({ state, codeChallenge: challenge, redirectUri: redirectUri(provider) });
 }
 
 export async function createConnection(
   user: User,
   provider: ProviderId,
-  opts: { mode: "demo" } | { mode: "live"; tokens: TokenSet; externalUserId: string; displayName: string | null },
+  opts: { mode: "demo" } | { mode: "live"; tokens: TokenSet; externalUserId: string; displayName: string | null; permissions?: string[] },
 ) {
   const db = getDb();
   const values =
@@ -43,7 +43,7 @@ export async function createConnection(
           accessToken: encrypt(opts.tokens.accessToken),
           refreshToken: opts.tokens.refreshToken ? encrypt(opts.tokens.refreshToken) : null,
           tokenExpiresAt: opts.tokens.expiresAt,
-          scopes: opts.tokens.scopes,
+          scopes: opts.permissions ? opts.permissions.join(" ") : opts.tokens.scopes,
         };
   const existing = db
     .select()

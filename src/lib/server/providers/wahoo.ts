@@ -5,7 +5,9 @@ import { env } from "../env";
 import { localNoonInstant, providerFetch } from "./http";
 import { ProviderError, type NormalizedActivity, type ProviderAdapter, type TokenSet } from "./types";
 
-const API = "https://api.wahooligan.com";
+/** Overridable for integration tests against a mock server. */
+const API = (process.env.WAHOO_API_BASE ?? "https://api.wahooligan.com").replace(/\/$/, "");
+const AUTHORIZE_URL = process.env.WAHOO_AUTHORIZE_URL ?? `${API}/oauth/authorize`;
 export const WAHOO_SCOPES = "user_read workouts_read workouts_write plans_read plans_write power_zones_read offline_data";
 
 /** Wahoo only shows scheduled plans on devices from today through six days ahead. */
@@ -101,7 +103,7 @@ export const wahooAdapter: ProviderAdapter = {
       code_challenge: codeChallenge,
       code_challenge_method: "S256",
     });
-    return `${API}/oauth/authorize?${q}`;
+    return `${AUTHORIZE_URL}?${q}`;
   },
 
   async exchangeCode({ code, codeVerifier, redirectUri }) {

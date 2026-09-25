@@ -1,6 +1,97 @@
 # Wrkhive
 
-Strukturierte Workouts für **Radfahren, Laufen und Krafttraining** in Sekunden erstellen und mit einem Klick an **Garmin** oder **Wahoo** senden. Dazu gibt es einen **KI-Coach** für spontane Einheiten und periodisierte Trainingspläne sowie ein **Dashboard** mit Fitness, Ermüdung, Form, Umfängen, Pulszonen, VO2max und Wettkampfprognosen. Neue Aktivitäten kommen per **Dauer-Sync** automatisch dazu.
+Strukturierte Workouts für **Radfahren, Laufen und Krafttraining** in Sekunden erstellen und mit einem Klick an **Garmin** oder **Wahoo** senden. Dazu gibt es einen **KI-Coach** für spontane Einheiten und periodisierte Trainingspläne sowie ein **Dashboard** mit Fitness, Ermüdung, Form, Umfängen, Pulszonen, VO2max und Wettkampfprognosen. Aktivitäten von Uhr und Radcomputer kommen per **Dauer-Sync** oder **FIT-Import** automatisch dazu.
+
+## Schnellstart mit Docker Desktop
+
+Voraussetzung: [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows, macOS oder Linux).
+
+```bash
+git clone https://github.com/kasu207/wrkhive.git
+cd wrkhive
+git checkout claude/busy-cray-s2ego9
+docker compose up --build
+```
+
+Danach **http://localhost:3000** öffnen. Beim ersten Start dauert der Build einige Minuten.
+
+- **„Demo ansehen“** legt ein Konto mit etwa einem Jahr Beispieldaten an.
+- **„Kostenlos starten“** legt ein leeres, eigenes Konto an.
+- Alle Daten liegen im Docker-Volume `wrkhive-data` und überstehen Neustarts und Updates. Komplett zurücksetzen: `docker compose down -v`.
+- Konfiguration (optional): `.env.example` nach `.env` kopieren und ausfüllen, dann `docker compose up --build`.
+
+| Befehl | Zweck |
+| --- | --- |
+| `docker compose up --build` | Bauen und starten (Vordergrund, Logs sichtbar) |
+| `docker compose up -d --build` | Im Hintergrund starten |
+| `docker compose logs -f wrkhive` | Logs ansehen |
+| `docker compose down` | Stoppen (Daten bleiben erhalten) |
+| `docker compose down -v` | Stoppen und alle Daten löschen |
+
+Das Image ist ein schlanker Node-22-Container mit Health-Check (`/api/health`), läuft als unprivilegierter Nutzer und wendet Datenbank-Migrationen beim Start automatisch an. Ein Hintergrund-Sync holt alle 30 Minuten neue Aktivitäten (`SYNC_INTERVAL_MINUTES`).
+
+## Garmin-Uhr und Wahoo-Radcomputer synchronisieren
+
+Es gibt zwei Wege. **Weg A** funktioniert sofort und ohne Zugangsdaten, **Weg B** ist der vollautomatische Sync über die offiziellen Schnittstellen.
+
+### Weg A: Sofort, ohne API-Zugang
+
+| Richtung | Garmin (z. B. Forerunner, fēnix, Edge) | Wahoo (ELEMNT BOLT, ROAM, ACE) |
+| --- | --- | --- |
+| **Gerät → Wrkhive** | Aktivitäten unter **Aktivitäten → „FIT-Dateien importieren“** hochladen: direkt vom Gerät per USB (Ordner `GARMIN/Activity`) oder aus Garmin Connect über **Aktivität → Zahnrad → „Original exportieren“** (ZIP, wird direkt verarbeitet) | In der ELEMNT-App den Verlauf öffnen, die Fahrt teilen und die **.fit**-Datei speichern. Dann in Wrkhive importieren |
+| **Wrkhive → Gerät** | Workout öffnen → **„An Gerät senden“ → „FIT-Workout“** herunterladen und per USB in den Ordner `GARMIN/NewFiles` kopieren. Die Uhr zeigt es unter **Training → Workouts** an. Unter macOS brauchen neuere Uhren (MTP) z. B. [OpenMTP](https://openmtp.ganeshrvel.com/) | Strukturierte Workouts gelangen nur über die Wahoo-Cloud aufs ELEMNT, also über Weg B |
+
+Der Import erkennt Duplikate (erneuter Import derselben Datei, dieselbe Einheit aus zwei Quellen), berechnet Normalized Power, Pulszonen und Trainingsbelastung und rekonstruiert unvollständige Aufzeichnungen, etwa wenn der Akku leer war.
+
+### Weg B: Automatischer Sync über die Hersteller-APIs
+
+| Richtung | Garmin | Wahoo |
+| --- | --- | --- |
+| **Wrkhive → Gerät** | Workout plus Kalendereintrag über die Training API. Die Uhr lädt es beim nächsten Sync mit Garmin Connect | Plan plus geplantes Workout über die Cloud API. Erscheint auf dem ELEMNT/RIVAL, wenn es für heute bis 6 Tage im Voraus geplant ist |
+| **Gerät → Wrkhive** | Garmin **schickt** neue Aktivitäten an einen Webhook (Push oder Ping). Beim Verbinden wird die Historie der letzten 12 Monate angefordert | Abruf über die API (beim Verbinden 12 Monate, danach alle 30 Minuten) und zusätzlich in Echtzeit per Webhook |
+
+Was du dafür brauchst:
+
+1. **Zugangsdaten der Hersteller**
+   - Garmin: Zugang zum [Garmin Connect Developer Program](https://developer.garmin.com/gc-developer-program/) beantragen und die **Training API** sowie die **Activity API** freischalten lassen. Garmin prüft die Anträge; das kann einige Tage dauern.
+   - Wahoo: Im [Wahoo Developer Portal](https://developers.wahooligan.com/) eine App anlegen. Scopes: `user_read workouts_read workouts_write plans_read plans_write power_zones_read offline_data`.
+2. **Eine öffentliche HTTPS-Adresse**, damit Garmin und Wahoo Wrkhive erreichen. Das betrifft die OAuth-Rückleitung und die Webhooks. Lokal geht das am einfachsten mit dem eingebauten Tunnel (ngrok, kostenlos mit fester Domain):
+   - Konto bei [ngrok](https://ngrok.com/) anlegen, unter *Domains* die kostenlose statische Domain reservieren, Authtoken kopieren.
+   - In `.env` eintragen:
+     ```
+     NGROK_AUTHTOKEN=…
+     NGROK_DOMAIN=dein-name.ngrok-free.app
+     APP_URL=https://dein-name.ngrok-free.app
+     ```
+   - Starten: `docker compose --profile tunnel up --build`
+3. **Adressen bei den Herstellern hinterlegen** (mit deiner `APP_URL`):
+
+   | | Garmin | Wahoo |
+   | --- | --- | --- |
+   | OAuth-Redirect | `https://…/api/devices/garmin/callback` | `https://…/api/devices/wahoo/callback` |
+   | Webhook | `https://…/api/webhooks/garmin?token=<GARMIN_WEBHOOK_TOKEN>` für *Activities* (Push oder Ping), *Deregistrations* und *User Permissions* | `https://…/api/webhooks/wahoo`, Token als `WAHOO_WEBHOOK_TOKEN` |
+
+4. **Zugangsdaten in `.env`** eintragen (`GARMIN_CLIENT_ID`, `GARMIN_CLIENT_SECRET`, `GARMIN_WEBHOOK_TOKEN`, `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET`, `WAHOO_WEBHOOK_TOKEN`) und mit `docker compose --profile tunnel up --build` neu starten.
+5. In Wrkhive unter **Geräte** auf **„Mit Garmin verbinden“** bzw. **„Mit Wahoo verbinden“** klicken und beim Hersteller zustimmen. Fehlen dort erteilte Berechtigungen, zeigt Wrkhive das auf der Geräteseite an.
+
+Ohne Zugangsdaten laufen die Verbindungen im klar gekennzeichneten **Demo-Modus** mit Beispieldaten.
+
+### Den kompletten Sync ohne Zugangsdaten ausprobieren
+
+Ein mitgelieferter **Anbieter-Simulator** bildet die Garmin- und Wahoo-APIs nach: OAuth mit PKCE, Workout- und Plan-Formate, Token-Rotation, Backfill-Push und Ping. Er prüft jede Anfrage von Wrkhive auf formale Korrektheit.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.mock.yml up --build
+```
+
+Dann unter http://localhost:3000 ein Konto anlegen und unter **Geräte** beide Anbieter verbinden. Workouts lassen sich senden, und simulierte Aktivitäten treffen ein. Die automatisierte Prüfung beider Richtungen (19 Checks) läuft mit:
+
+```bash
+npm install
+APP=http://localhost:3000 WAHOO_WEBHOOK_TOKEN=mock-wahoo-webhook-token npm run test:e2e
+```
+
+(Nutzt das installierte Google Chrome; alternativ `CHROME_PATH=/pfad/zu/chromium` setzen.)
 
 ## Funktionen
 
@@ -8,76 +99,51 @@ Strukturierte Workouts für **Radfahren, Laufen und Krafttraining** in Sekunden 
 | --- | --- |
 | **Workout-Builder** | Visueller Editor (Drag & Drop, Wiederholungsblöcke, Zonen-Schnellwahl, Trittfrequenz) und **Text-Schnelleingabe**, beide immer synchron. Live-Profil mit Zonenfarben, Dauer, Distanz, TSS und IF. Rückgängig/Wiederholen, Tastenkürzel (Strg+S, Strg+Z). |
 | **Text-Notation** | `Aufwärmen 10min 50-65%`, `5x (3min 110%, Erholung 2min 55%)`, `6x (400m 4:00/km, 90s Pause)`, `3x10 Kniebeuge (Langhantel) 60kg Pause 2min`. Versteht h/min/s/km/m, %, W, Pace, bpm, Z1 bis Z7, GA1/GA2/KB/EB/SB, RPE und rpm. |
-| **Senden an Geräte** | Garmin Connect (Training API: Workout plus Kalendereintrag) und Wahoo (Plan plus geplantes Workout für ELEMNT/RIVAL). Export als **FIT** (offizielles Garmin FIT SDK), **ZWO** (Zwift) und Text. |
+| **Senden an Geräte** | Garmin Connect (Workout plus Kalender) und Wahoo (Plan plus geplantes Workout). Export als **FIT** (offizielles Garmin FIT SDK), **ZWO** (Zwift) und Text. |
+| **Aktivitäten** | Dauer-Sync (Webhooks und Abruf), FIT/ZIP-Import, Duplikaterkennung, Normalized Power, Pulszonen, TSS nach Leistung, Pace oder Puls. |
 | **Krafttraining** | 50 Übungen mit FIT- bzw. Garmin-Übungs-IDs, damit Uhren Animationen und Wiederholungszählung zeigen. Sätze, Wiederholungen, Gewicht, Pausen. |
-| **KI-Coach** | Chat für spontane Workouts auf Basis der aktuellen Form (CTL/ATL/TSB, letzte 14 Tage, Planung). Planassistent für periodisierte Pläne (Grundlage, Aufbau, Spitze, Tapering, 3:1-Entlastung), mit einem Klick in den Kalender. Nutzt Claude mit strukturierter Ausgabe. Ohne API-Schlüssel arbeitet ein regelbasierter Coach. |
+| **KI-Coach** | Chat für spontane Workouts auf Basis der aktuellen Form. Planassistent für periodisierte Pläne (Grundlage, Aufbau, Spitze, Tapering, 3:1-Entlastung), mit einem Klick in den Kalender. Nutzt Claude (`ANTHROPIC_API_KEY`); ohne Schlüssel arbeitet ein regelbasierter Coach. |
 | **Kalender** | 4-Wochen-Ansicht, Drag & Drop, geplante und absolvierte Einheiten, Wochensummen (Soll/Ist/Planziel), automatisches Abhaken bei passender Aktivität. |
-| **Dashboard** | Performance-Management-Chart (Fitness, Ermüdung, Tagesbelastung, Form), Wochenumfang nach Sportart, Pulszonenverteilung, effektive VO2max (Daniels/Gilbert mit Pulskorrektur) und Laufprognosen. |
-| **Dauer-Sync** | Webhooks (Garmin Push/Ping, Wahoo `workout_summary`), stündlicher Abgleich, Historien-Import (12 Monate), Duplikaterkennung über Anbieter hinweg. |
+| **Dashboard** | Performance-Management-Chart (Fitness, Ermüdung, Tagesbelastung, Form), Wochenumfang nach Sportart, Pulszonen, effektive VO2max und Laufprognosen. |
 
-## Schnellstart
+## Entwicklung ohne Docker
 
 ```bash
 npm install
-cp .env.example .env.local   # optional: Schlüssel eintragen
+cp .env.example .env.local   # optional
 npm run dev                  # http://localhost:3000
 ```
-
-Auf der Startseite mit **„Demo ansehen“** entsteht ein vollständig befülltes Demo-Konto mit etwa einem Jahr Trainingshistorie, Workouts und Wochenplanung. Ohne Garmin- bzw. Wahoo-Zugangsdaten laufen Verbindungen im klar gekennzeichneten **Demo-Modus**: Das Senden wird simuliert, Aktivitäten sind Beispieldaten.
-
-Die SQLite-Datenbank wird beim ersten Zugriff automatisch angelegt und migriert (`./data/wrkhive.db`).
-
-### Skripte
 
 | Befehl | Zweck |
 | --- | --- |
 | `npm run dev` | Entwicklungsserver |
 | `npm run build && npm start` | Produktionsbuild und Server |
 | `npm test` | Unit- und Integrationstests (Vitest) |
-| `npm run typecheck` | TypeScript |
-| `npm run lint` | ESLint |
+| `npm run test:e2e` | Sync-Prüfung gegen laufende App plus Simulator |
+| `npm run mock:providers` | Anbieter-Simulator lokal starten |
+| `npm run typecheck` / `npm run lint` | TypeScript / ESLint |
 | `npm run db:generate` | Neue Migration nach Schemaänderung (drizzle-kit) |
 
-## Integrationen einrichten
+## Konfiguration
 
-### Garmin
+Alle Variablen mit Erklärung stehen in `.env.example`. Die wichtigsten:
 
-1. Zugang zum [Garmin Connect Developer Program](https://developer.garmin.com/gc-developer-program/) beantragen, dort **Training API** und **Activity API** (Health API) freischalten lassen.
-2. Redirect-URL: `https://<APP_URL>/api/devices/garmin/callback` (OAuth 2.0 mit PKCE).
-3. Im Portal als Endpoint für **Activities** (Push oder Ping), **Deregistrations** und **User Permissions** eintragen:
-   `https://<APP_URL>/api/webhooks/garmin?token=<GARMIN_WEBHOOK_TOKEN>`
-4. `GARMIN_CLIENT_ID`, `GARMIN_CLIENT_SECRET`, `GARMIN_WEBHOOK_TOKEN` setzen.
-
-Gesendete Workouts landen in der Garmin-Connect-Workoutbibliothek und, wenn ein Datum gewählt ist, im Kalender. Beim nächsten Sync überträgt Garmin sie auf Uhr bzw. Edge.
-
-### Wahoo
-
-1. App im [Wahoo Developer Portal](https://developers.wahooligan.com/) anlegen, Scopes: `user_read workouts_read workouts_write plans_read plans_write power_zones_read offline_data`.
-2. Redirect-URL: `https://<APP_URL>/api/devices/wahoo/callback`.
-3. Webhook-URL: `https://<APP_URL>/api/webhooks/wahoo`, den Token als `WAHOO_WEBHOOK_TOKEN` setzen.
-4. `WAHOO_CLIENT_ID`, `WAHOO_CLIENT_SECRET` setzen.
-
-Einschränkungen von Wahoo: Pläne erscheinen auf ELEMNT und RIVAL nur, wenn sie für **heute bis 6 Tage im Voraus** geplant sind. Krafttraining und Schritte mit Runden-Taste unterstützt Wahoo nicht; der Senden-Dialog weist darauf hin.
-
-### KI-Coach
-
-`ANTHROPIC_API_KEY` setzen. Standardmodell ist `claude-opus-5` (über `COACH_MODEL` änderbar), mit adaptivem Denken, strukturierter JSON-Ausgabe und serverseitigen Fallbacks bei Ablehnungen. Workouts erzeugt das Modell in der Text-Notation. Wrkhive validiert sie mit demselben Parser wie der Editor und bittet bei Fehlern einmal um Korrektur. Ist die API nicht erreichbar, übernimmt der regelbasierte Coach.
-
-### Periodischer Sync
-
-Webhooks liefern neue Aktivitäten in Echtzeit. Zusätzlich synchronisiert die App beim Öffnen Verbindungen, die länger als eine Stunde nicht abgeglichen wurden. Für einen serverseitigen Abgleich ohne Nutzeraktivität:
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" https://<APP_URL>/api/cron/sync
-```
+| Variable | Bedeutung |
+| --- | --- |
+| `APP_URL` | Öffentliche Adresse (für OAuth und Webhooks), lokal `http://localhost:3000` |
+| `APP_SECRET` | Schlüssel für die Token-Verschlüsselung. Leer lassen, dann wird er erzeugt und im Datenverzeichnis gespeichert |
+| `ANTHROPIC_API_KEY` | Aktiviert den KI-Coach (Modell `claude-opus-5`, änderbar über `COACH_MODEL`) |
+| `GARMIN_*`, `WAHOO_*` | Zugangsdaten und Webhook-Tokens der Hersteller |
+| `SYNC_INTERVAL_MINUTES` | Intervall des Hintergrund-Syncs (Standard 30, `0` = aus) |
+| `CRON_SECRET` | Schützt `GET /api/cron/sync` für externe Scheduler |
 
 ## Architektur
 
-- **Next.js 16** (App Router, Server Components, Server Actions), **React 19**, **TypeScript** (strict), **Tailwind CSS 4**
+- **Next.js 16** (App Router, Server Components, Server Actions), **React 19**, **TypeScript** (strict), **Tailwind CSS 4**, Standalone-Build für Docker
 - **SQLite** über **Drizzle ORM** und better-sqlite3 (WAL, Fremdschlüssel, Migrationen in `drizzle/`)
 - Eigene Authentifizierung: scrypt-Passwort-Hashes, gehashte Session-Tokens in httpOnly-Cookies, Rate-Limit für Logins
-- Geräte-Tokens mit **AES-256-GCM** verschlüsselt (`APP_SECRET`)
-- Diagramme als eigene SVG-Komponenten (d3-scale/d3-shape), mit Hover-Tooltips
+- Geräte-Tokens mit **AES-256-GCM** verschlüsselt, OAuth 2.0 mit **PKCE**, Webhooks mit Token-Prüfung
+- Diagramme als eigene SVG-Komponenten (d3-scale/d3-shape)
 
 ```
 src/
@@ -85,26 +151,27 @@ src/
   components/           UI-Bausteine, Builder, Diagramme, Kalender, Coach
   db/                   Drizzle-Schema und Verbindung
   lib/workout/          Workout-Modell, Text-Parser, Kennzahlen, Zonen, Exporter (FIT, ZWO, Wahoo, Garmin)
+  lib/fit/              FIT-Aktivitätsimport
   lib/analytics/        TSS, CTL/ATL/TSB, VO2max, Wettkampfprognosen
   lib/coach/            Regelbasierter Workout- und Plangenerator, Coach-Prompt
-  lib/server/           Auth, Krypto, Sync, Geräteadapter, Coach (Claude), Trainingsdaten
+  lib/server/           Auth, Krypto, Sync, Scheduler, Geräteadapter, Coach (Claude)
+scripts/                Anbieter-Simulator und End-to-End-Sync-Prüfung
 ```
 
-Workouts speichern Intensitäten **relativ** zu den Schwellenwerten (% FTP, % Schwellenpace, % LTHR). Dadurch passen sie sich automatisch an, wenn sich FTP oder Pace ändern. Absolute Werte (Watt, Pace, bpm) werden erst beim Export berechnet.
+Workouts speichern Intensitäten **relativ** zu den Schwellenwerten (% FTP, % Schwellenpace, % LTHR) und passen sich an, wenn sich diese ändern. Absolute Werte (Watt, Pace, bpm) werden erst beim Senden bzw. Export berechnet.
 
 ## Tests
 
-`npm test` führt 124 Tests aus:
-
-- Parser und Serializer inklusive Roundtrip, Fehlermeldungen und alle Vorlagen
-- FIT-Export, geprüft mit dem offiziellen Garmin-Decoder (Ziele, Wiederholungen, Distanzen, Pace, Kraftübungen)
-- Wahoo-Plan, Garmin-Payload und ZWO
-- Belastungsmodelle (TSS, PMC) und VO2max-Prognosen gegen die Daniels-Tabellen
-- Workout- und Plangenerator für alle Kombinationen aus Sportart, Schwerpunkt und Dauer
-- Integrationstests mit echter SQLite-Datenbank: Demo-Sync, Idempotenz, Duplikaterkennung, automatisches Abhaken, Coach mit gemocktem Claude (Anfrageformat, Reparaturrunde, Planübernahme, Fallback)
+- `npm test`: 131 Unit- und Integrationstests, u. a.:
+  - Parser und Exporter; FIT-Workouts werden mit dem offiziellen Garmin-Decoder zurückgelesen
+  - FIT-Aktivitätsimport inklusive NP, Pulszonen, ZIP und defekter Aufzeichnungen
+  - Belastungsmodelle gegen die Daniels-Tabellen
+  - Sync mit echter SQLite-Datenbank und Coach mit gemocktem Claude
+- `npm run test:e2e`: 19 End-to-End-Prüfungen des Syncs in beide Richtungen gegen den Anbieter-Simulator, im Browser und im Docker-Container
 
 ## Betrieb
 
-- In Produktion `APP_SECRET` setzen und über **HTTPS** ausliefern, da Session-Cookies `Secure` sind.
-- Die Datenbank ist eine einzelne Datei. Für Backups genügt `sqlite3 wrkhive.db ".backup backup.db"`.
-- Rate-Limit und Sync-Sperre arbeiten im Prozessspeicher. Für mehrere Instanzen sollten sie auf einen geteilten Speicher (z. B. Redis) umgestellt werden, ebenso die Datenbank (z. B. Postgres, Drizzle unterstützt beides).
+- Für den Betrieb im Internet über **HTTPS** ausliefern (Reverse Proxy oder Tunnel). Session-Cookies sind dann automatisch `Secure`.
+- Backup: Das Volume enthält `wrkhive.db` und `.app-secret`. Beides sichern, z. B.:
+  `docker run --rm -v wrkhive_wrkhive-data:/data -v "$PWD":/backup busybox tar czf /backup/wrkhive-backup.tgz -C /data .`
+- Rate-Limit, Sync-Sperre und Scheduler arbeiten im Prozessspeicher und sind für eine einzelne Instanz ausgelegt.

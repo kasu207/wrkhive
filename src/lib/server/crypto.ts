@@ -1,5 +1,7 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
@@ -35,20 +37,31 @@ export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-let warned = false;
+let cachedKey: Buffer | null = null;
+
+/**
+ * Encryption key from APP_SECRET. If it is not set, a random secret is
+ * generated once and stored next to the database (so self-hosted / Docker
+ * installs work out of the box and keep their tokens across restarts).
+ */
 function secretKey(): Buffer {
+  if (cachedKey) return cachedKey;
   let secret = process.env.APP_SECRET;
   if (!secret || secret.length < 32) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("APP_SECRET must be set to at least 32 characters in production.");
+    const dbFile = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "wrkhive.db");
+    const file = path.join(path.dirname(dbFile), ".app-secret");
+    try {
+      secret = fs.readFileSync(file, "utf8").trim();
+    } catch {
+      secret = randomBytes(48).toString("base64url");
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, secret, { mode: 0o600 });
+      console.warn(`[wrkhive] APP_SECRET not set – generated a secret in ${file}`);
     }
-    if (!warned) {
-      console.warn("[wrkhive] APP_SECRET not set – using an insecure development key.");
-      warned = true;
-    }
-    secret = "wrkhive-development-secret-do-not-use-in-production";
+    if (!secret || secret.length < 32) throw new Error("Invalid APP_SECRET");
   }
-  return createHash("sha256").update(secret).digest();
+  cachedKey = createHash("sha256").update(secret).digest();
+  return cachedKey;
 }
 
 /** AES-256-GCM. Output: v1.<iv>.<tag>.<ciphertext> (base64url). */

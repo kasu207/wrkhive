@@ -36,6 +36,8 @@ export interface TokenSet {
 export interface ConnectedAccount {
   externalUserId: string;
   displayName: string | null;
+  /** Permissions the user granted at the provider (e.g. Garmin WORKOUT_IMPORT). */
+  permissions?: string[];
 }
 
 export interface SendInput {

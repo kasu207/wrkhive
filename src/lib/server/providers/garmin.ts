@@ -11,9 +11,10 @@ import { ProviderError, type NormalizedActivity, type ProviderAdapter, type Toke
  * - Activity API: activity summaries arrive via push (or ping) webhooks;
  *   history is requested via backfill and also delivered to the webhook.
  */
-const AUTHORIZE_URL = "https://connect.garmin.com/oauth2Confirm";
-const TOKEN_URL = "https://diauth.garmin.com/di-oauth2-service/oauth/token";
-const API = "https://apis.garmin.com";
+// Overridable for integration tests against a mock server.
+const AUTHORIZE_URL = process.env.GARMIN_AUTHORIZE_URL ?? "https://connect.garmin.com/oauth2Confirm";
+const TOKEN_URL = process.env.GARMIN_TOKEN_URL ?? "https://diauth.garmin.com/di-oauth2-service/oauth/token";
+const API = (process.env.GARMIN_API_BASE ?? "https://apis.garmin.com").replace(/\/$/, "");
 /** Garmin limits a single backfill request to 90 days. */
 const BACKFILL_MAX_DAYS = 90;
 
@@ -136,9 +137,19 @@ export const garminAdapter: ProviderAdapter = {
   },
 
   async account(accessToken) {
-    const res = await providerFetch("Garmin", `${API}/wellness-api/rest/user/id`, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const auth = { headers: { Authorization: `Bearer ${accessToken}` } };
+    const res = await providerFetch("Garmin", `${API}/wellness-api/rest/user/id`, auth);
     const json = (await res.json()) as { userId: string };
-    return { externalUserId: json.userId, displayName: null };
+    // Users can deselect individual permissions on the Garmin consent screen.
+    let permissions: string[] | undefined;
+    try {
+      const p = await providerFetch("Garmin", `${API}/wellness-api/rest/user/permissions`, auth);
+      const list = await p.json();
+      if (Array.isArray(list)) permissions = list.map(String);
+    } catch {
+      permissions = undefined;
+    }
+    return { externalUserId: json.userId, displayName: null, permissions };
   },
 
   compatibility() {
@@ -181,6 +192,8 @@ export const garminAdapter: ProviderAdapter = {
     const end = new Date();
     let start = since;
     let requests = 0;
+    let accepted = 0;
+    let lastError: unknown = null;
     while (start < end && requests < 5) {
       const chunkEnd = new Date(Math.min(end.getTime(), start.getTime() + BACKFILL_MAX_DAYS * 86_400_000));
       const q = new URLSearchParams({
@@ -191,14 +204,23 @@ export const garminAdapter: ProviderAdapter = {
         await providerFetch("Garmin", `${API}/wellness-api/rest/backfill/activities?${q}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
+        accepted++;
       } catch (e) {
-        // 409 = this range was already requested; not an error for us.
-        if (!(e instanceof ProviderError && e.status === 409)) throw e;
+        if (e instanceof ProviderError && e.authExpired) throw e;
+        // 409 = this range was already requested: fine. Other errors (e.g. a
+        // range before Garmin's history limit) only affect this chunk.
+        if (e instanceof ProviderError && e.status === 409) accepted++;
+        else lastError = e;
       }
       start = chunkEnd;
       requests++;
     }
-    return { activities: [], asyncRequested: true, message: "Garmin liefert deine Historie in den nächsten Minuten nach." };
+    if (!accepted && lastError) throw lastError;
+    return {
+      activities: [],
+      asyncRequested: true,
+      message: "Garmin liefert die Aktivitäten in den nächsten Minuten an den Webhook. Dafür muss Wrkhive aus dem Internet erreichbar sein (siehe README, Tunnel).",
+    };
   },
 
   async revoke(accessToken) {
@@ -212,7 +234,8 @@ export const garminAdapter: ProviderAdapter = {
 /** Fetches summaries referenced by a ping notification's callback URL. */
 export async function fetchGarminCallback(callbackURL: string, accessToken: string): Promise<GarminActivitySummary[]> {
   const url = new URL(callbackURL);
-  if (url.hostname !== "apis.garmin.com") throw new ProviderError("Garmin: unerwartete Callback-URL");
+  // Only follow callback URLs that point at the Garmin API host (never arbitrary URLs with our token).
+  if (url.origin !== new URL(API).origin) throw new ProviderError("Garmin: unerwartete Callback-URL");
   const res = await providerFetch("Garmin", url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await res.json();
   return Array.isArray(json) ? (json as GarminActivitySummary[]) : [];

@@ -1,6 +1,6 @@
 import "server-only";
 import { and, eq, gt, lt } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { getDb } from "@/db";
@@ -22,10 +22,24 @@ export async function createSession(userId: string): Promise<void> {
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // Secure when the request came in over HTTPS (directly or via a proxy /
+    // tunnel); plain-HTTP local installs (Docker on localhost) must work too.
+    secure: await isHttpsRequest(),
     path: "/",
     expires: expiresAt,
   });
+}
+
+async function isHttpsRequest(): Promise<boolean> {
+  const h = await headers();
+  const forwarded = h.get("x-forwarded-proto");
+  if (forwarded) return forwarded.split(",")[0].trim() === "https";
+  const appUrl = process.env.APP_URL ?? "";
+  try {
+    return appUrl.startsWith("https://") && new URL(appUrl).host === h.get("host");
+  } catch {
+    return false;
+  }
 }
 
 export async function destroySession(): Promise<void> {

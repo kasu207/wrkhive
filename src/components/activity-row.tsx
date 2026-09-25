@@ -26,7 +26,7 @@ export function ActivityRow({ a, href }: { a: Activity; href?: string }) {
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-3 text-[12px] text-ink-3 tabular">
           <span className="truncate">{activityMetrics(a).join(" · ")}</span>
-          {a.tss ? <span className="shrink-0 font-medium text-ink-2">{Math.round(a.tss)} TSS</span> : null}
+          {a.tss && Math.round(a.tss) > 0 ? <span className="shrink-0 font-medium text-ink-2">{Math.round(a.tss)} TSS</span> : null}
         </div>
       </div>
     </>

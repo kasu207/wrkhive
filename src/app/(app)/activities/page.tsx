@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ActivityDetail } from "@/components/activity-detail";
 import { ActivityRow } from "@/components/activity-row";
+import { ImportButton } from "@/components/import-button";
 import { SportIcon } from "@/components/brand";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
@@ -55,7 +56,11 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Aktivitäten" description="Alles, was deine Geräte aufgezeichnet haben, mit Belastung und Kennzahlen." />
+      <PageHeader
+        title="Aktivitäten"
+        description="Alles, was deine Geräte aufgezeichnet haben, mit Belastung und Kennzahlen."
+        actions={<ImportButton />}
+      />
       <div className="mb-5 flex flex-wrap gap-2">
         {FILTERS.map((f) => {
           const active = (f.value === "all" && !sport) || f.value === sport;
@@ -86,7 +91,9 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
                 <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-5 py-3">
                   <h2 className="text-[15px] font-semibold">{new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(displayDate(`${month}-15`))}</h2>
                   <span className="text-[12px] text-ink-3 tabular">
-                    {items.length} Aktivitäten · {formatDuration(sec, { compact: true })} · {formatDistance(dist)} · {formatNumber(tss, 0)} TSS
+                    {items.length} {items.length === 1 ? "Aktivität" : "Aktivitäten"} · {formatDuration(sec, { compact: true })}
+                    {dist > 0 ? ` · ${formatDistance(dist)}` : ""}
+                    {tss >= 1 ? ` · ${formatNumber(tss, 0)} TSS` : ""}
                   </span>
                 </div>
                 <div className="divide-y divide-border">
@@ -109,8 +116,13 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
         <Card>
           <EmptyState
             title="Noch keine Aktivitäten"
-            description="Verbinde Garmin oder Wahoo. Deine Historie wird automatisch importiert und neue Aktivitäten kommen per Dauer-Sync dazu."
-            action={<ButtonLink href="/devices">Gerät verbinden</ButtonLink>}
+            description="Verbinde Garmin oder Wahoo für den Dauer-Sync, oder importiere FIT-Dateien direkt von Uhr und Radcomputer."
+            action={
+              <div className="flex flex-wrap justify-center gap-2">
+                <ButtonLink href="/devices">Gerät verbinden</ButtonLink>
+                <ImportButton />
+              </div>
+            }
           />
         </Card>
       )}

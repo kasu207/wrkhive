@@ -73,7 +73,7 @@ function markError(connectionId: string, e: unknown) {
  * another provider already delivered (same sport, start within 5 minutes) and
  * marks matching planned workouts as done.
  */
-export function upsertActivities(user: User, conn: Pick<DeviceConnection, "id" | "provider">, list: NormalizedActivity[]): { inserted: number; updated: number } {
+export function upsertActivities(user: User, conn: { id: string | null; provider: "garmin" | "wahoo" | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number } {
   const db = getDb();
   let inserted = 0;
   let updated = 0;

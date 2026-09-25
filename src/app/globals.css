@@ -1,26 +1,202 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter/opsz.css";
 
+/*
+ * Wrkhive design tokens.
+ * Warm neutral surfaces, ink-black primary actions, one honey accent for the
+ * brand. Sport and zone colors follow a validated categorical palette.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f2f2ef;
+  --surface-3: #e9e8e3;
+  --border: #e6e5e0;
+  --border-strong: #d4d3cc;
+  --ink: #111110;
+  --ink-2: #4b4a46;
+  --ink-3: #82817b;
+  --brand: #f2a900;
+  --brand-ink: #6b4a00;
+  --brand-soft: #fff5d9;
+  --focus: #2a78d6;
+
+  --sport-ride: #2a78d6;
+  --sport-run: #eb6834;
+  --sport-strength: #1baf7a;
+  --sport-other: #8a8984;
+
+  --zone-1: #a3a7ad;
+  --zone-2: #3987e5;
+  --zone-3: #1baf7a;
+  --zone-4: #eda100;
+  --zone-5: #eb6834;
+  --zone-6: #e34948;
+  --zone-7: #7e5fd6;
+
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --good-soft: #e8f6e8;
+  --warning: #fab219;
+  --warning-ink: #7a5000;
+  --warning-soft: #fff4dc;
+  --critical: #d03b3b;
+  --critical-ink: #a32424;
+  --critical-soft: #fdecec;
+
+  --grid: #ecebe6;
+  --axis: #c3c2b7;
+
+  --shadow-sm: 0 1px 2px rgb(17 17 16 / 0.05);
+  --shadow-md: 0 1px 2px rgb(17 17 16 / 0.04), 0 4px 16px rgb(17 17 16 / 0.06);
+  --shadow-lg: 0 2px 4px rgb(17 17 16 / 0.04), 0 16px 48px rgb(17 17 16 / 0.12);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-focus: var(--focus);
+  --color-ride: var(--sport-ride);
+  --color-run: var(--sport-run);
+  --color-strength: var(--sport-strength);
+  --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-good-soft: var(--good-soft);
+  --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
+  --color-warning-soft: var(--warning-soft);
+  --color-critical: var(--critical);
+  --color-critical-ink: var(--critical-ink);
+  --color-critical-soft: var(--critical-soft);
+
+  --shadow-card: var(--shadow-sm);
+  --shadow-raised: var(--shadow-md);
+  --shadow-overlay: var(--shadow-lg);
+
+  --radius-card: 14px;
+  --radius-control: 10px;
+
+  --animate-fade-up: fade-up 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-fade-in: fade-in 240ms ease-out both;
+  --animate-pop: pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  --animate-grow: grow 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-slide-up: slide-up 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes grow {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
+  @keyframes grow-x {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin, unobtrusive scrollbars inside panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+dialog::backdrop {
+  background: rgb(17 17 16 / 0.36);
+  backdrop-filter: blur(2px);
 }

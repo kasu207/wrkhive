@@ -14,7 +14,7 @@
  *   - repeat step:        durationValue = index of first repeated step,
  *                         targetValue   = total number of repetitions
  */
-import { Encoder, Profile } from "@garmin/fitsdk";
+import { Encoder, Profile, type FileCreatorMesg, type FileIdMesg, type WorkoutMesg, type WorkoutStepMesg } from "@garmin/fitsdk";
 import { getExercise } from "../exercises";
 import { flattenSteps } from "../metrics";
 import { resolveCadence, resolveTarget, type AbsoluteTarget } from "../resolve";
@@ -163,14 +163,15 @@ export function encodeFitWorkout(input: FitWorkoutInput): Uint8Array {
 
   const encoder = new Encoder();
   const created = input.createdAt ?? new Date();
-  encoder.onMesg(Profile.MesgNum.FILE_ID, {
+  const fileId = {
     type: "workout",
     manufacturer: "development",
     product: 0,
     serialNumber: (created.getTime() / 1000) >>> 0,
     timeCreated: created,
-  });
-  encoder.onMesg(Profile.MesgNum.FILE_CREATOR, { softwareVersion: 100 });
+  };
+  encoder.onMesg(Profile.MesgNum.FILE_ID, fileId as unknown as FileIdMesg);
+  encoder.onMesg(Profile.MesgNum.FILE_CREATOR, { softwareVersion: 100 } as FileCreatorMesg);
 
   const { sport, subSport } = FIT_SPORT[structure.sport];
   const workout: Mesg = {
@@ -180,8 +181,8 @@ export function encodeFitWorkout(input: FitWorkoutInput): Uint8Array {
     numValidSteps: steps.length,
   };
   if (input.description) workout.wktDescription = input.description.slice(0, MAX_NOTES);
-  encoder.onMesg(Profile.MesgNum.WORKOUT, workout);
+  encoder.onMesg(Profile.MesgNum.WORKOUT, workout as unknown as WorkoutMesg);
 
-  for (const s of steps) encoder.onMesg(Profile.MesgNum.WORKOUT_STEP, s);
+  for (const s of steps) encoder.onMesg(Profile.MesgNum.WORKOUT_STEP, s as unknown as WorkoutStepMesg);
   return encoder.close();
 }

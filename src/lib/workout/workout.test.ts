@@ -136,12 +136,12 @@ describe("FIT export", () => {
     expect(decoder.checkIntegrity()).toBe(true);
     const { messages, errors } = decoder.read();
     expect(errors).toEqual([]);
-    expect(messages.fileIdMesgs[0].type).toBe("workout");
-    expect(messages.workoutMesgs[0].wktName).toBe("VO2 5x3");
-    expect(messages.workoutMesgs[0].sport).toBe("cycling");
-    const steps = messages.workoutStepMesgs;
+    expect(messages.fileIdMesgs![0].type).toBe("workout");
+    expect(messages.workoutMesgs![0].wktName).toBe("VO2 5x3");
+    expect(messages.workoutMesgs![0].sport).toBe("cycling");
+    const steps = messages.workoutStepMesgs!;
     expect(steps).toHaveLength(5);
-    expect(messages.workoutMesgs[0].numValidSteps).toBe(5);
+    expect(messages.workoutMesgs![0].numValidSteps).toBe(5);
 
     // Warm-up: 10 minutes, 125-163 W
     expect(steps[0].intensity).toBe("warmup");
@@ -172,15 +172,15 @@ describe("FIT export", () => {
     const run = parseOk("6x (400m 4:00/km, 90s Pause)", "run");
     const r = new Decoder(Stream.fromByteArray(Array.from(encodeFitWorkout({ name: "Bahn", structure: run, thresholds: T })))).read();
     expect(r.errors).toEqual([]);
-    expect(r.messages.workoutMesgs[0].sport).toBe("running");
-    expect(r.messages.workoutStepMesgs[0].targetType).toBe("speed");
-    expect(r.messages.workoutStepMesgs[0].customTargetSpeedLow).toBeCloseTo(4.167, 2);
+    expect(r.messages.workoutMesgs![0].sport).toBe("running");
+    expect(r.messages.workoutStepMesgs![0].targetType).toBe("speed");
+    expect(r.messages.workoutStepMesgs![0].customTargetSpeedLow).toBeCloseTo(4.167, 2);
 
     const gym = parseOk("3x10 Bankdrücken (Langhantel) 62.5kg Pause 2min", "strength");
     const g = new Decoder(Stream.fromByteArray(Array.from(encodeFitWorkout({ name: "Push", structure: gym, thresholds: T })))).read();
     expect(g.errors).toEqual([]);
-    expect(g.messages.workoutMesgs[0].subSport).toBe("strengthTraining");
-    const s0 = g.messages.workoutStepMesgs[0];
+    expect(g.messages.workoutMesgs![0].subSport).toBe("strengthTraining");
+    const s0 = g.messages.workoutStepMesgs![0];
     expect(s0.durationType).toBe("reps");
     expect(s0.durationReps).toBe(10);
     expect(s0.exerciseCategory).toBe("benchPress");

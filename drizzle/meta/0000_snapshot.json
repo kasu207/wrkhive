@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f6006142-c3da-47e5-a986-7122e608c901",
+  "id": "df2db4a2-d979-4510-9c01-98c50543f8e3",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "activities": {
@@ -1023,6 +1023,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "time_zone": {
+          "name": "time_zone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Europe/Berlin'"
         },
         "is_demo": {
           "name": "is_demo",

@@ -140,6 +140,7 @@ CREATE TABLE `users` (
 	`rest_hr` integer DEFAULT 52 NOT NULL,
 	`threshold_pace` integer DEFAULT 285 NOT NULL,
 	`weight_kg` real,
+	`time_zone` text DEFAULT 'Europe/Berlin' NOT NULL,
 	`is_demo` integer DEFAULT false NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL
 );

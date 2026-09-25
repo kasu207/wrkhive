@@ -18,6 +18,7 @@ export const users = sqliteTable("users", {
   restHr: integer("rest_hr").notNull().default(52),
   thresholdPace: integer("threshold_pace").notNull().default(285),
   weightKg: real("weight_kg"),
+  timeZone: text("time_zone").notNull().default("Europe/Berlin"),
   isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 });

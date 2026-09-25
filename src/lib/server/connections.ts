@@ -15,6 +15,7 @@ export function redirectUri(provider: ProviderId) {
 /** Starts OAuth for a configured provider, or creates a demo connection. Returns the URL to navigate to. */
 export async function beginConnect(user: User, provider: ProviderId, returnTo: string | null = null): Promise<string> {
   const adapter = PROVIDERS[provider];
+  if (adapter.auth !== "oauth") throw new Error(`${adapter.name} wird mit einem API-Schlüssel verbunden.`);
   if (!adapter.isConfigured()) {
     await createConnection(user, provider, { mode: "demo" });
     return `/devices?connected=${provider}`;
@@ -64,5 +65,5 @@ export async function createConnection(
   const conn = db.select().from(deviceConnections).where(eq(deviceConnections.id, id)).get()!;
   // Import history right away so the dashboard is useful immediately.
   await syncConnection(conn, { full: true });
-  return conn;
+  return db.select().from(deviceConnections).where(eq(deviceConnections.id, id)).get() ?? conn;
 }

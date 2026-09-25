@@ -48,7 +48,7 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
           </Badge>
         ) : null}
         {a.deviceName ? <Badge>{a.deviceName}</Badge> : null}
-        <Badge>{a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : "Manuell"}</Badge>
+        <Badge>{a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : a.provider === "intervals" ? "intervals.icu" : "Manuell"}</Badge>
       </div>
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
         {metrics.map(([k, v]) => (

@@ -33,6 +33,7 @@ Workouts beschreibst du im Feld "steps" in der Wrkhive-Schreibweise, ein Schritt
 - Dauer: 10min, 90s, 1h 30min, 1min 30s, 2km, 400m (Meter ab 100), 10 Wdh, offen (Runden-Taste).
 - Rolle optional am Anfang: Aufwärmen, Erholung, Pause, Cool-down (sonst Belastung).
 - Intensität Rad: Prozent der FTP (90% oder 88-94%), Zonen Z1 bis Z7, optional Trittfrequenz (90-100rpm).
+- Rad-Workouts: jeder Schritt bekommt ein Leistungsziel in % FTP, auch Erholung und Pausen (z. B. 50%), damit ein Radcomputer den Smart-Trainer im ERG-Modus steuern kann. Kein RPE und kein Puls als Ziel auf dem Rad. Harte Intervalle mindestens 30s, Dauer in Zeit statt Distanz.
 - Intensität Laufen: Pace (4:30/km oder 4:30-4:45/km) oder Zonen Z1 bis Z7 (relativ zur Schwellenpace), Puls (140-150bpm) möglich.
 - RPE 1 bis 10 für alles ohne Messgröße.
 - Wiederholung: 5x (3min 110%, Erholung 2min 55%). Keine verschachtelten Wiederholungen.

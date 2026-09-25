@@ -8,10 +8,11 @@ import { newId } from "@/lib/id";
 import { decrypt, encrypt } from "./crypto";
 import { generateDemoActivities } from "./providers/demo";
 import { garminAdapter } from "./providers/garmin";
+import { intervalsAdapter } from "./providers/intervals";
 import { ProviderError, type NormalizedActivity, type ProviderAdapter, type ProviderId } from "./providers/types";
 import { wahooAdapter } from "./providers/wahoo";
 
-export const PROVIDERS: Record<ProviderId, ProviderAdapter> = { garmin: garminAdapter, wahoo: wahooAdapter };
+export const PROVIDERS: Record<ProviderId, ProviderAdapter> = { garmin: garminAdapter, wahoo: wahooAdapter, intervals: intervalsAdapter };
 
 const HISTORY_DAYS = 365;
 const DEMO_HISTORY_DAYS = 420;
@@ -73,7 +74,7 @@ function markError(connectionId: string, e: unknown) {
  * another provider already delivered (same sport, start within 5 minutes) and
  * marks matching planned workouts as done.
  */
-export function upsertActivities(user: User, conn: { id: string | null; provider: "garmin" | "wahoo" | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number } {
+export function upsertActivities(user: User, conn: { id: string | null; provider: ProviderId | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number } {
   const db = getDb();
   let inserted = 0;
   let updated = 0;
@@ -249,7 +250,14 @@ export interface SendOutcome {
   message: string;
 }
 
-export async function sendWorkoutToDevice(user: User, workoutId: string, provider: ProviderId, date: ISODate | null, timeZone: string): Promise<SendOutcome> {
+export async function sendWorkoutToDevice(
+  user: User,
+  workoutId: string,
+  provider: ProviderId,
+  date: ISODate | null,
+  timeZone: string,
+  opts: { indoor?: boolean } = {},
+): Promise<SendOutcome> {
   const db = getDb();
   const workout = db
     .select()
@@ -294,6 +302,7 @@ export async function sendWorkoutToDevice(user: User, workoutId: string, provide
       timeZone,
       user,
       workoutId,
+      indoor: Boolean(opts.indoor),
     });
     record("sent", res.externalIds, null);
     return { ok: true, message: res.message };

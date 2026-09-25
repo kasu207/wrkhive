@@ -12,11 +12,15 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { addDays, diffDays, displayDate, toISODate } from "@/lib/dates";
 import { formatDayLong } from "@/lib/format";
+import { intervalsCompatibility } from "@/lib/workout/export/intervals";
 import { wahooCompatibility } from "@/lib/workout/export/wahoo";
+import { ergCheck, ergHints } from "@/lib/workout/trainer";
 import type { WorkoutStructure } from "@/lib/workout/types";
 
+type Provider = "garmin" | "wahoo" | "intervals";
+
 export interface ConnectionInfo {
-  provider: "garmin" | "wahoo";
+  provider: Provider;
   mode: "live" | "demo";
   status: "connected" | "error" | "revoked";
   displayName: string | null;
@@ -25,7 +29,14 @@ export interface ConnectionInfo {
 const PROVIDER_META = {
   garmin: { name: "Garmin Connect", devices: "Forerunner, fēnix, Edge, Venu …", note: "Landet in deinem Garmin-Connect-Kalender und wird beim nächsten Sync auf Uhr oder Radcomputer übertragen." },
   wahoo: { name: "Wahoo", devices: "ELEMNT BOLT, ROAM, ACE, RIVAL", note: "Erscheint nach dem nächsten Sync auf deinem ELEMNT bzw. RIVAL. Wahoo zeigt geplante Workouts von heute bis 6 Tage im Voraus." },
+  intervals: {
+    name: "intervals.icu",
+    devices: "Weiter an Garmin und Wahoo",
+    note: "Landet im intervals.icu-Kalender. intervals.icu überträgt die geplanten Workouts der nächsten 7 Tage an Garmin Connect und Wahoo, wenn dort „Upload planned workouts“ aktiviert ist.",
+  },
 } as const;
+
+const PROVIDER_ORDER: Provider[] = ["garmin", "wahoo", "intervals"];
 
 type When = "today" | "tomorrow" | "date" | "library";
 
@@ -49,7 +60,10 @@ export function SendDialog({
   const toast = useToast();
   const today = toISODate(new Date());
   const connected = connections.filter((c) => c.status !== "revoked");
-  const [provider, setProvider] = useState<"garmin" | "wahoo" | null>(connected[0]?.provider ?? null);
+  const [provider, setProvider] = useState<Provider | null>(connected[0]?.provider ?? null);
+  const isRide = structure.sport === "ride";
+  // Default to the trainer when every step has a power target (ERG ready).
+  const [indoor, setIndoor] = useState(() => isRide && ergCheck(structure).withoutPower === 0);
   const [when, setWhen] = useState<When>(initialDate ? "date" : "today");
   const [date, setDate] = useState(initialDate ?? addDays(today, 2));
   const [pending, start] = useTransition();
@@ -57,6 +71,11 @@ export function SendDialog({
 
   const targetDate = when === "today" ? today : when === "tomorrow" ? addDays(today, 1) : when === "date" ? date : null;
   const issues = useMemo(() => {
+    if (provider === "intervals") {
+      const list = intervalsCompatibility(structure);
+      if (when === "library") list.push("intervals.icu braucht ein Datum, damit das Workout auf die Geräte übertragen wird.");
+      return list;
+    }
     if (provider !== "wahoo") return [];
     const list = wahooCompatibility(structure);
     if (when === "library") list.push("Wahoo braucht ein Datum, damit das Workout auf dem Gerät erscheint.");
@@ -67,12 +86,14 @@ export function SendDialog({
     return list;
   }, [provider, structure, when, targetDate, today]);
 
+  const hints = useMemo(() => (isRide && indoor ? ergHints(structure) : []), [isRide, indoor, structure]);
+
   const send = () => {
     if (!provider) return;
     start(async () => {
       const id = workoutId ?? (await ensureSaved());
       if (!id) return;
-      const res = await sendToDevice({ workoutId: id, provider, date: targetDate, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      const res = await sendToDevice({ workoutId: id, provider, date: targetDate, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, indoor: isRide && indoor });
       if (res.ok) {
         setSentTo(provider);
         toast({ tone: "success", title: `An ${PROVIDER_META[provider].name} gesendet`, description: res.message });
@@ -119,8 +140,8 @@ export function SendDialog({
       <div className="space-y-6">
         <section>
           <h3 className="mb-2.5 text-[13px] font-semibold text-ink-2">Gerät</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(["garmin", "wahoo"] as const).map((p) => {
+          <div className="grid gap-2 sm:grid-cols-3">
+            {PROVIDER_ORDER.map((p) => {
               const conn = connections.find((c) => c.provider === p);
               const usable = conn && conn.status !== "revoked";
               const active = provider === p && usable;
@@ -131,7 +152,7 @@ export function SendDialog({
                   disabled={!usable}
                   onClick={() => setProvider(p)}
                   className={cn(
-                    "relative flex flex-col items-start rounded-xl border p-3.5 text-left transition-all",
+                    "relative flex min-w-0 flex-col items-start rounded-xl border p-3.5 text-left transition-all",
                     active ? "border-ink bg-surface shadow-[0_0_0_1px_var(--ink)]" : "border-border bg-surface hover:border-border-strong",
                     !usable && "cursor-default opacity-100",
                   )}
@@ -145,7 +166,7 @@ export function SendDialog({
                     ) : null}
                   </div>
                   <span className="mt-0.5 text-[12px] text-ink-3">{PROVIDER_META[p].devices}</span>
-                  <div className="mt-2.5">
+                  <div className="mt-2.5 flex max-w-full min-w-0">
                     {!conn ? (
                       <Link href="/devices" className="text-[13px] font-medium text-focus hover:underline">
                         Verbinden
@@ -155,7 +176,9 @@ export function SendDialog({
                     ) : conn.mode === "demo" ? (
                       <Badge tone="brand">Demo-Verbindung</Badge>
                     ) : (
-                      <Badge tone="good">Verbunden{conn.displayName ? ` · ${conn.displayName}` : ""}</Badge>
+                      <Badge tone="good" className="block min-w-0 max-w-full truncate leading-[22px]" title={conn.displayName ?? undefined}>
+                        Verbunden{conn.displayName ? ` · ${conn.displayName}` : ""}
+                      </Badge>
                     )}
                   </div>
                 </button>
@@ -196,6 +219,38 @@ export function SendDialog({
               </div>
             ) : null}
             {targetDate ? <p className="mt-2 text-[13px] text-ink-3">Geplant für {formatDayLong(displayDate(targetDate))}</p> : null}
+            {isRide ? (
+              <div className="mt-4">
+                <h3 className="mb-2.5 text-[13px] font-semibold text-ink-2">Wo</h3>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Wo">
+                  {(
+                    [
+                      [true, "Rollentrainer (ERG)"],
+                      [false, "Draußen"],
+                    ] as [boolean, string][]
+                  ).map(([v, label]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      aria-checked={indoor === v}
+                      onClick={() => setIndoor(v)}
+                      className={cn(
+                        "h-9 rounded-full border px-3.5 text-[13px] font-medium transition-colors",
+                        indoor === v ? "border-ink bg-ink text-white" : "border-border-strong bg-surface text-ink-2 hover:border-ink/40 hover:text-ink",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {indoor ? (
+                  <p className="mt-2 text-[13px] leading-relaxed text-ink-3">
+                    Der Radcomputer steuert einen per ANT+ FE-C gekoppelten Smart-Trainer und hält die Leistungsziele automatisch.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {provider ? <p className="mt-3 rounded-xl bg-surface-2 px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-2">{PROVIDER_META[provider].note}</p> : null}
             {issues.length ? (
               <ul className="mt-3 space-y-1 rounded-xl border border-[#f5dca6] bg-warning-soft px-3.5 py-2.5 text-[13px] text-warning-ink">
@@ -204,12 +259,19 @@ export function SendDialog({
                 ))}
               </ul>
             ) : null}
+            {hints.length ? (
+              <ul className="mt-3 list-disc space-y-1 rounded-xl border border-border bg-surface-2 py-2.5 pl-8 pr-3.5 text-[13px] leading-relaxed text-ink-2">
+                {hints.map((h) => (
+                  <li key={h}>{h}</li>
+                ))}
+              </ul>
+            ) : null}
           </section>
         ) : (
           <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-ink-2">
             Noch kein Gerät verbunden.{" "}
             <Link href="/devices" className="font-medium text-focus hover:underline">
-              Garmin oder Wahoo verbinden
+              Garmin, Wahoo oder intervals.icu verbinden
             </Link>{" "}
             oder das Workout als Datei herunterladen.
           </p>

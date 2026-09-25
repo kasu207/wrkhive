@@ -1,20 +1,24 @@
 "use client";
 
-import { AlertTriangle, CloudDownload, RefreshCw, Unlink } from "lucide-react";
+import { AlertTriangle, CloudDownload, ExternalLink, RefreshCw, Unlink } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { connectDevice, disconnectDevice, setAutoSync, syncNow } from "@/app/actions/devices";
+import { connectDevice, connectWithApiKey, disconnectDevice, setAutoSync, syncNow } from "@/app/actions/devices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
+import { Field, Input } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { formatNumber, relativeTime } from "@/lib/format";
 
 export interface DeviceCardProps {
-  provider: "garmin" | "wahoo";
+  provider: "garmin" | "wahoo" | "intervals";
   name: string;
+  auth: "oauth" | "apikey";
+  /** Optional lead text shown under the header. */
+  intro?: string;
   devices: string[];
   features: string[];
   configured: boolean;
@@ -47,7 +51,7 @@ function Switch({ checked, onChange, label, disabled }: { checked: boolean; onCh
   );
 }
 
-export function DeviceCard({ provider, name, devices, features, configured, connection: c }: DeviceCardProps) {
+export function DeviceCard({ provider, name, auth, intro, devices, features, configured, connection: c }: DeviceCardProps) {
   const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
@@ -60,6 +64,25 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
       const r = await fn();
       if (r.ok) toast({ tone: "success", title, description: r.message });
       else toast({ tone: "error", title: "Fehler", description: r.error });
+      router.refresh();
+    });
+
+  const [keyForm, setKeyForm] = useState(false);
+  const [athleteId, setAthleteId] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [keyError, setKeyError] = useState<string | null>(null);
+
+  const connectKey = () =>
+    start(async () => {
+      setKeyError(null);
+      const r = await connectWithApiKey(provider, athleteId, apiKey);
+      if (!r.ok) {
+        setKeyError(r.error);
+        return;
+      }
+      setKeyForm(false);
+      setApiKey("");
+      toast({ tone: "success", title: `${name} verbunden`, description: r.message });
       router.refresh();
     });
 
@@ -77,8 +100,13 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
   return (
     <Card className="flex flex-col">
       <div className="flex items-start gap-4 p-5">
-        <div className={cn("grid size-12 shrink-0 place-items-center rounded-2xl text-[15px] font-bold tracking-tight text-white", provider === "garmin" ? "bg-[#111110]" : "bg-[#1a4fd6]")}>
-          {provider === "garmin" ? "G" : "W"}
+        <div
+          className={cn(
+            "grid size-12 shrink-0 place-items-center rounded-2xl text-[15px] font-bold tracking-tight text-white",
+            provider === "garmin" ? "bg-[#111110]" : provider === "wahoo" ? "bg-[#1a4fd6]" : "bg-[#0f766e]",
+          )}
+        >
+          {provider === "garmin" ? "G" : provider === "wahoo" ? "W" : "i"}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -96,6 +124,8 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
           <p className="mt-0.5 text-[13px] text-ink-3">{devices.join(", ")}</p>
         </div>
       </div>
+
+      {intro ? <p className="px-5 pb-3 text-[14px] leading-relaxed text-ink-2">{intro}</p> : null}
 
       <ul className="space-y-1.5 px-5 pb-4 text-[14px] text-ink-2">
         {features.map((f) => (
@@ -130,7 +160,10 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div>
               <div className="text-[14px] font-medium">Dauer-Sync</div>
-              <div className="text-[13px] text-ink-3">Neue Aktivitäten automatisch importieren{c.mode === "live" ? " (per Webhook, zusätzlich alle 30 Minuten abgeglichen)" : ""}</div>
+              <div className="text-[13px] text-ink-3">
+                Neue Aktivitäten automatisch importieren
+                {c.mode === "live" ? (auth === "apikey" ? " (alle 30 Minuten abgeglichen)" : " (per Webhook, zusätzlich alle 30 Minuten abgeglichen)") : ""}
+              </div>
             </div>
             <Switch
               checked={auto}
@@ -158,7 +191,7 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface-2/60 px-5 py-3">
             {c.status === "revoked" ? (
-              <Button size="sm" onClick={connect} loading={pending}>
+              <Button size="sm" onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending}>
                 Neu verbinden
               </Button>
             ) : (
@@ -179,12 +212,55 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
         </div>
       ) : (
         <div className="mt-auto border-t border-border bg-surface-2/60 px-5 py-4">
-          <Button onClick={connect} loading={pending} className="w-full sm:w-auto">
+          <Button onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending && auth !== "apikey"} className="w-full sm:w-auto">
             Mit {name} verbinden
           </Button>
-          {!configured ? <p className="mt-2 text-[12px] leading-relaxed text-ink-3">Für diese Installation sind keine {name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.</p> : null}
+          {!configured && auth === "oauth" ? <p className="mt-2 text-[12px] leading-relaxed text-ink-3">Für diese Installation sind keine {name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.</p> : null}
         </div>
       )}
+
+      {auth === "apikey" ? (
+        <Dialog
+          open={keyForm}
+          onClose={() => setKeyForm(false)}
+          title={`${name} verbinden`}
+          size="sm"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setKeyForm(false)}>
+                Abbrechen
+              </Button>
+              <Button variant="primary" onClick={connectKey} loading={pending} disabled={!apiKey.trim()}>
+                Verbinden
+              </Button>
+            </>
+          }
+        >
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (apiKey.trim()) connectKey();
+            }}
+          >
+            <p className="text-[14px] leading-relaxed text-ink-2">
+              Beides findest du in intervals.icu unter{" "}
+              <a href="https://intervals.icu/settings" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-focus hover:underline">
+                Settings <ExternalLink className="size-3" />
+              </a>{" "}
+              im Abschnitt „Developer Settings“.
+            </p>
+            <Field label="Athleten-ID" htmlFor={`${provider}-athlete`} hint="Beginnt mit i, z. B. i123456">
+              <Input id={`${provider}-athlete`} value={athleteId} onChange={(e) => setAthleteId(e.target.value)} placeholder="i123456" autoComplete="off" spellCheck={false} />
+            </Field>
+            <Field label="API-Schlüssel" htmlFor={`${provider}-key`} error={keyError ?? undefined}>
+              <Input id={`${provider}-key`} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="off" spellCheck={false} aria-invalid={!!keyError} />
+            </Field>
+            <p className="text-[13px] leading-relaxed text-ink-3">Der Schlüssel wird verschlüsselt gespeichert und nur für deinen Kalender und deine Aktivitäten verwendet.</p>
+            <button type="submit" hidden />
+          </form>
+        </Dialog>
+      ) : null}
 
       <Dialog
         open={confirm}
@@ -209,7 +285,8 @@ export function DeviceCard({ provider, name, devices, features, configured, conn
           </>
         }
       >
-        <p className="text-[14px] text-ink-2">Wrkhive kann danach keine Workouts mehr an {name} senden und keine Aktivitäten mehr empfangen. Der Zugriff wird auch bei {name} widerrufen.</p>
+        <p className="text-[14px] text-ink-2">Wrkhive kann danach keine Workouts mehr an {name} senden und keine Aktivitäten mehr empfangen.{" "}
+          {auth === "apikey" ? `Den API-Schlüssel kannst du zusätzlich in ${name} neu erzeugen.` : `Der Zugriff wird auch bei ${name} widerrufen.`}</p>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3.5">
           <input type="checkbox" checked={removeData} onChange={(e) => setRemoveData(e.target.checked)} className="mt-0.5 size-4 accent-[var(--critical)]" />
           <span className="text-[14px]">

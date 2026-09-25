@@ -21,6 +21,8 @@ services:
       WAHOO_WEBHOOK_TOKEN: mock-wahoo-webhook-token
       WAHOO_AUTHORIZE_URL: http://localhost:4010/wahoo/oauth/authorize
       WAHOO_API_BASE: http://mock-providers:4010/wahoo
+      # intervals.icu-Simulator: Athleten-ID i424242, API-Schlüssel mock-intervals-key
+      INTERVALS_API_BASE: http://mock-providers:4010/intervals/api/v1
     depends_on:
       - mock-providers
 

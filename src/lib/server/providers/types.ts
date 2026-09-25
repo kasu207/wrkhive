@@ -1,7 +1,7 @@
 import type { DeviceConnection, User } from "@/db/schema";
 import type { WorkoutStructure } from "@/lib/workout/types";
 
-export type ProviderId = "garmin" | "wahoo";
+export type ProviderId = "garmin" | "wahoo" | "intervals";
 
 /** Activity as delivered by a provider, before load metrics are derived. */
 export interface NormalizedActivity {
@@ -50,6 +50,8 @@ export interface SendInput {
   timeZone: string;
   user: User;
   workoutId: string;
+  /** Ride on a smart trainer (indoor, ERG) rather than outdoors. */
+  indoor: boolean;
 }
 
 export interface SendResult {
@@ -69,6 +71,8 @@ export interface ProviderAdapter {
   name: string;
   /** Devices users recognize, for the UI. */
   devices: string[];
+  /** "oauth": server-side app credentials + OAuth; "apikey": the athlete enters a personal API key. */
+  auth: "oauth" | "apikey";
   /** True when OAuth credentials are configured; otherwise demo mode is used. */
   isConfigured(): boolean;
   authorizeUrl(params: { state: string; codeChallenge: string; redirectUri: string }): string;
@@ -80,6 +84,8 @@ export interface ProviderAdapter {
   send(accessToken: string, input: SendInput): Promise<SendResult>;
   sync(accessToken: string, connection: DeviceConnection, since: Date): Promise<SyncResult>;
   revoke(accessToken: string): Promise<void>;
+  /** API-key providers: validates the key and returns the account plus the token to store. */
+  connectWithKey?(input: { athleteId: string; apiKey: string }): Promise<ConnectedAccount & { token: string }>;
 }
 
 export class ProviderError extends Error {

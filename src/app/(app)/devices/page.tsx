@@ -1,5 +1,5 @@
 import { and, count, eq } from "drizzle-orm";
-import { FileDown, Upload } from "lucide-react";
+import { Bike, FileDown, Upload } from "lucide-react";
 import { ImportButton } from "@/components/import-button";
 import type { Metadata } from "next";
 import { DeviceCard } from "@/components/devices/device-card";
@@ -23,7 +23,17 @@ const FEATURES = {
     "Rad und Laufen, geplant für heute bis 6 Tage im Voraus",
     "Aktivitäten werden automatisch importiert (Webhook)",
   ],
+  intervals: [
+    "Workouts landen im intervals.icu-Kalender und gehen von dort an Garmin Connect und Wahoo",
+    "Rad-Workouts mit Leistungszielen steuern den Smart-Trainer über den Radcomputer im ERG-Modus",
+    "Aktivitäten von Garmin und Wahoo kommen über intervals.icu zurück, Duplikate werden erkannt",
+  ],
 } as const;
+
+const INTRO = {
+  intervals:
+    "Der schnellste Weg ohne eigenen Garmin- oder Wahoo-Entwicklerzugang: Verbinde in intervals.icu (kostenlos) einmal Garmin Connect und Wahoo, aktiviere dort jeweils „Upload planned workouts“ und hinterlege hier deinen persönlichen API-Schlüssel.",
+} as Partial<Record<"garmin" | "wahoo" | "intervals", string>>;
 
 export default async function DevicesPage(props: PageProps<"/devices">) {
   const user = await requireUser();
@@ -32,12 +42,17 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
   const conns = db.select().from(deviceConnections).where(eq(deviceConnections.userId, user.id)).all();
   const error = typeof sp.error === "string" ? sp.error : null;
 
-  const cards = (["garmin", "wahoo"] as const).map((p) => {
+  // Without own Garmin/Wahoo API credentials the intervals.icu bridge is the way to real devices: show it first.
+  const direct = PROVIDERS.garmin.isConfigured() || PROVIDERS.wahoo.isConfigured();
+  const order = direct ? (["garmin", "wahoo", "intervals"] as const) : (["intervals", "garmin", "wahoo"] as const);
+  const cards = order.map((p) => {
     const c = conns.find((x) => x.provider === p);
     const adapter = PROVIDERS[p];
     return {
       provider: p,
       name: adapter.name,
+      auth: adapter.auth,
+      intro: INTRO[p],
       devices: adapter.devices,
       features: [...FEATURES[p]],
       configured: adapter.isConfigured(),
@@ -65,7 +80,7 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
           Die Verbindung konnte nicht hergestellt werden: {error}
         </div>
       ) : null}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         {cards.map((c) => (
           <DeviceCard key={c.provider} {...c} />
         ))}
@@ -102,6 +117,28 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
           </div>
         </Card>
       </div>
+
+      <Card className="mt-4 p-5">
+        <div className="flex items-start gap-4">
+          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-ink-2">
+            <Bike className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[15px] font-semibold">Indoor mit Smart-Trainer (ERG)</h2>
+            <p className="mt-1 text-[14px] leading-relaxed text-ink-2">
+              Ein Wahoo ELEMNT steuert Rollentrainer anderer Hersteller über ANT+ FE-C und hält im ERG-Modus die Leistungsziele des Workouts.
+            </p>
+            <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-[14px] leading-relaxed text-ink-2">
+              <li>Trainer in der Wahoo-App unter Sensoren mit dem ELEMNT koppeln, während du trittst, damit er aufwacht.</li>
+              <li>Rad-Workout mit Leistungszielen (% FTP) bauen, beim Senden „Rollentrainer (ERG)“ wählen.</li>
+              <li>Auf dem ELEMNT unter „Geplante Workouts“ starten, der Trainer folgt den Zielwerten automatisch.</li>
+            </ol>
+            <p className="mt-3 text-[13px] leading-relaxed text-ink-3">
+              Van Rysel D500 und D900: Firmware vorher mit der App OneLap Fit aktualisieren. Decathlon bestätigt für Firmware 104 einen Fehler, bei dem ERG über ANT+ mit Radcomputern abbricht. Erkennt der ELEMNT den Trainer nur als Leistungsmesser, fehlt die FE-C-Steuerung; dann das Workout als ZWO-Datei in Zwift fahren (Steuerung per Bluetooth FTMS) und den ELEMNT nur aufzeichnen lassen.
+            </p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

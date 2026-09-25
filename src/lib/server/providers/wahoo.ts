@@ -17,6 +17,12 @@ const BIKE_TYPES = new Set([0, 11, 12, 13, 14, 15, 16, 21, 49, 61, 64, 68, 70]);
 const RUN_TYPES = new Set([1, 3, 4, 5, 19, 67, 71]);
 const STRENGTH_TYPES = new Set([42]);
 
+/** Wahoo workout types (Cloud API data types): 0 BIKING, 61 BIKING_INDOOR_TRAINER, 1 RUNNING. */
+export function wahooWorkoutType(sport: "ride" | "run" | "strength", indoor: boolean): number {
+  if (sport === "ride") return indoor ? 61 : 0;
+  return 1;
+}
+
 function sportOf(typeId: number): NormalizedActivity["sport"] {
   if (BIKE_TYPES.has(typeId)) return "ride";
   if (RUN_TYPES.has(typeId)) return "run";
@@ -87,6 +93,7 @@ export const wahooAdapter: ProviderAdapter = {
   id: "wahoo",
   name: "Wahoo",
   devices: ["ELEMNT BOLT", "ELEMNT ROAM", "ELEMNT ACE", "ELEMNT RIVAL", "KICKR"],
+  auth: "oauth",
 
   isConfigured() {
     const c = env.wahoo();
@@ -163,7 +170,7 @@ export const wahooAdapter: ProviderAdapter = {
       description: input.description,
       structure: input.structure,
       thresholds: { ftp: input.user.ftp, lthr: input.user.lthr, maxHr: input.user.maxHr, thresholdPace: input.user.thresholdPace },
-      indoor: false,
+      indoor: input.structure.sport === "ride" && input.indoor,
     });
     const auth = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/x-www-form-urlencoded" };
     const externalId = `wrkhive-${input.workoutId}-${Date.now()}`;
@@ -189,7 +196,7 @@ export const wahooAdapter: ProviderAdapter = {
       body: new URLSearchParams({
         "workout[name]": input.name,
         "workout[workout_token]": externalId,
-        "workout[workout_type_id]": input.structure.sport === "ride" ? "0" : "1",
+        "workout[workout_type_id]": String(wahooWorkoutType(input.structure.sport, input.indoor)),
         "workout[starts]": localNoonInstant(date, input.timeZone).toISOString(),
         "workout[minutes]": String(wahooMinutes(input.structure, input.user)),
         "workout[plan_id]": String(planJson.id),
@@ -198,7 +205,10 @@ export const wahooAdapter: ProviderAdapter = {
     const workoutJson = (await workoutRes.json()) as { id: number };
     return {
       externalIds: { plan: planJson.id, workout: workoutJson.id },
-      message: `Geplant für ${date}. Das Workout erscheint nach dem nächsten Sync auf deinem ELEMNT bzw. RIVAL.`,
+      message:
+        input.structure.sport === "ride" && input.indoor
+          ? `Geplant für ${date} als Rollentrainer-Workout. Nach dem nächsten Sync auf dem ELEMNT unter „Geplante Workouts“ starten; ein per ANT+ FE-C gekoppelter Smart-Trainer wird im ERG-Modus gesteuert.`
+          : `Geplant für ${date}. Das Workout erscheint nach dem nächsten Sync auf deinem ELEMNT bzw. RIVAL.`,
     };
   },
 

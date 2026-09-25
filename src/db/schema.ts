@@ -122,7 +122,7 @@ export const deviceConnections = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    provider: text("provider", { enum: ["garmin", "wahoo"] }).notNull(),
+    provider: text("provider", { enum: ["garmin", "wahoo", "intervals"] }).notNull(),
     /** "demo" connections simulate the provider when no API credentials are configured. */
     mode: text("mode", { enum: ["live", "demo"] }).notNull(),
     externalUserId: text("external_user_id"),
@@ -157,7 +157,7 @@ export const deliveries = sqliteTable(
       .notNull()
       .references(() => workouts.id, { onDelete: "cascade" }),
     connectionId: text("connection_id").references(() => deviceConnections.id, { onDelete: "set null" }),
-    provider: text("provider", { enum: ["garmin", "wahoo"] }).notNull(),
+    provider: text("provider", { enum: ["garmin", "wahoo", "intervals"] }).notNull(),
     status: text("status", { enum: ["sent", "failed"] }).notNull(),
     scheduledDate: text("scheduled_date"),
     externalIds: text("external_ids", { mode: "json" }).$type<Record<string, string | number>>(),
@@ -175,7 +175,7 @@ export const activities = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     connectionId: text("connection_id").references(() => deviceConnections.id, { onDelete: "set null" }),
-    provider: text("provider", { enum: ["garmin", "wahoo", "manual"] }).notNull(),
+    provider: text("provider", { enum: ["garmin", "wahoo", "intervals", "manual"] }).notNull(),
     externalId: text("external_id").notNull(),
     sport: text("sport", { enum: ["ride", "run", "strength", "other"] }).notNull(),
     name: text("name").notNull(),
@@ -232,7 +232,7 @@ export const oauthStates = sqliteTable("oauth_states", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  provider: text("provider", { enum: ["garmin", "wahoo"] }).notNull(),
+  provider: text("provider", { enum: ["garmin", "wahoo", "intervals"] }).notNull(),
   codeVerifier: text("code_verifier").notNull(),
   /** Origin the user started from (the OAuth redirect may arrive via a public tunnel URL). */
   returnTo: text("return_to"),

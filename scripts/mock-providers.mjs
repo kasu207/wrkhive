@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Mock Garmin + Wahoo provider APIs for end-to-end testing without real
+ * Mock Garmin + Wahoo + intervals.icu provider APIs for end-to-end testing without real
  * developer credentials. Emulates the documented request/response formats and
  * validates everything Wrkhive sends (OAuth + PKCE, plan/workout payloads,
  * token rotation, backfill limits). Garmin backfill requests are answered like
  * the real service: asynchronously, by POSTing notifications to the app's webhook.
  *
  *   node scripts/mock-providers.mjs
+ *
+ * intervals.icu: athlete i424242, API key "mock-intervals-key" (HTTP Basic, user API_KEY).
  *
  * Env: MOCK_PORT (4010), APP_WEBHOOK_BASE (http://localhost:3000),
  *      GARMIN_WEBHOOK_TOKEN, MOCK_LOG (./mock-providers.log.json)
@@ -35,10 +37,11 @@ const wahooWorkouts = [];
 const garminWorkouts = new Map();
 const garminSchedules = [];
 const pendingPings = new Map(); // id -> summaries
+const intervalsEvents = [];
 
 function log(entry) {
   events.push({ at: new Date().toISOString(), ...entry });
-  fs.writeFileSync(LOG, JSON.stringify({ events, problems, wahooPlans: [...wahooPlans.values()], wahooWorkouts, garminWorkouts: [...garminWorkouts.values()], garminSchedules }, null, 2));
+  fs.writeFileSync(LOG, JSON.stringify({ events, problems, wahooPlans: [...wahooPlans.values()], wahooWorkouts, garminWorkouts: [...garminWorkouts.values()], garminSchedules, intervalsEvents }, null, 2));
 }
 function problem(msg) {
   problems.push(msg);
@@ -196,6 +199,9 @@ async function wahoo(req, res, url, path) {
     if (!/^\d+$/.test(w.minutes ?? "")) problem("wahoo workouts: minutes must be an integer");
     if (Number.isNaN(Date.parse(w.starts))) problem("wahoo workouts: starts not ISO");
     if (!wahooPlans.has(Number(w.plan_id))) problem("wahoo workouts: unknown plan_id");
+    if (!["0", "1", "61"].includes(w.workout_type_id)) problem(`wahoo workouts: unexpected workout_type_id ${w.workout_type_id}`);
+    const header = wahooPlans.get(Number(w.plan_id))?.plan.header;
+    if (header && header.workout_type_family === 0 && (header.workout_type_location === 0) !== (w.workout_type_id === "61")) problem("wahoo workouts: indoor plan must use BIKING_INDOOR_TRAINER (61) and vice versa");
     const ahead = (Date.parse(w.starts) - Date.now()) / 86400e3;
     if (ahead < -1 || ahead > 7) problem(`wahoo workouts: starts ${w.starts} outside the device window`);
     const id = 9000 + wahooWorkouts.length + 1;
@@ -354,6 +360,104 @@ async function garmin(req, res, url, path) {
   send(res, 404, { error: `unknown ${req.method} ${path}` });
 }
 
+// --- intervals.icu -----------------------------------------------------------------
+
+const ICU_ATHLETE = "i424242";
+const ICU_KEY = "mock-intervals-key";
+
+/** Strict parser for the workout-text subset Wrkhive emits; returns steps or pushes problems. */
+function parseIntervalsText(text) {
+  const steps = [];
+  const blocks = text.replace(/\n+$/, "").split(/\n\n/);
+  for (const block of blocks) {
+    const lines = block.split("\n");
+    let reps = null;
+    let first = 0;
+    if (/^(Warmup|Cooldown)$/.test(lines[0])) first = 1;
+    else if (/^\d+x$/.test(lines[0])) {
+      reps = Number(lines[0].slice(0, -1));
+      if (reps < 2) problem(`intervals text: repeat count ${reps} < 2`);
+      first = 1;
+    }
+    const body = lines.slice(first);
+    if (!body.length) problem(`intervals text: empty block "${block}"`);
+    const parsed = [];
+    for (const line of body) {
+      const m = line.match(/^- (\S+)(.*)$/);
+      if (!m) {
+        problem(`intervals text: not a step line "${line}"`);
+        continue;
+      }
+      const [, dur, rest] = m;
+      if (!/^(\d+m|\d+s|\d+mtr|\d+(\.\d+)?km)$/.test(dur)) problem(`intervals text: bad duration "${dur}"`);
+      if (/^\d+m$/.test(dur) && Number(dur.slice(0, -1)) === 0) problem(`intervals text: zero duration`);
+      const tokens = rest.trim() ? rest.trim().split(/\s+/) : [];
+      let i = 0;
+      if (tokens[i] && /^\d+(-\d+)?%$/.test(tokens[i])) {
+        i++;
+        if (tokens[i] === "LTHR" || tokens[i] === "Pace") i++;
+      }
+      if (tokens[i] && /^\d+(-\d+)?rpm$/.test(tokens[i])) i++;
+      for (const w of tokens.slice(i)) if (!/^[\p{L}-]{2,}$/u.test(w)) problem(`intervals text: cue word "${w}" could be misparsed`);
+      parsed.push({ duration: dur });
+    }
+    steps.push(reps ? { reps, steps: parsed } : { steps: parsed });
+  }
+  return steps;
+}
+
+async function intervals(req, res, url, path) {
+  const auth = req.headers.authorization ?? "";
+  const expected = `Basic ${Buffer.from(`API_KEY:${ICU_KEY}`).toString("base64")}`;
+  if (auth !== expected) return send(res, 401, { status: 401, error: "Access denied" });
+  const m = path.match(/^\/api\/v1\/athlete\/(0|i\d+)(\/.*)?$/);
+  if (!m) return send(res, 404, { error: "not found" });
+  if (m[1] !== "0" && m[1] !== ICU_ATHLETE) return send(res, 403, { error: "forbidden" });
+  const sub = m[2] ?? "";
+  log({ provider: "intervals", method: req.method, path });
+
+  if (req.method === "GET" && sub === "") return send(res, 200, { id: ICU_ATHLETE, name: "Mock Athlet" });
+
+  if (req.method === "POST" && sub === "/events") {
+    if (!(req.headers["content-type"] ?? "").includes("application/json")) problem("intervals events: must be JSON");
+    const b = JSON.parse(await readBody(req));
+    if (b.category !== "WORKOUT") problem("intervals events: category must be WORKOUT");
+    if (!/^\d{4}-\d{2}-\d{2}T00:00:00$/.test(b.start_date_local ?? "")) problem("intervals events: start_date_local must be YYYY-MM-DDT00:00:00");
+    if (!["Ride", "Run"].includes(b.type)) problem(`intervals events: unexpected type ${b.type}`);
+    if (!b.name) problem("intervals events: name missing");
+    if (!Number.isInteger(b.moving_time) || b.moving_time <= 0) problem("intervals events: moving_time must be a positive integer");
+    const steps = typeof b.description === "string" ? parseIntervalsText(b.description) : (problem("intervals events: description missing"), []);
+    const id = 90000 + intervalsEvents.length;
+    intervalsEvents.push({ id, ...b });
+    return send(res, 200, { id, ...b, workout_doc: { steps } });
+  }
+
+  if (req.method === "DELETE" && /^\/events\/\d+$/.test(sub)) return send(res, 200, {});
+
+  if (req.method === "GET" && sub === "/activities") {
+    const oldest = url.searchParams.get("oldest");
+    const newest = url.searchParams.get("newest");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(oldest ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(newest ?? "")) problem("intervals activities: oldest/newest must be YYYY-MM-DD");
+    const at = (daysAgo, hour) => {
+      const d = new Date(Date.now() - daysAgo * 86400e3);
+      d.setUTCHours(hour, 0, 0, 0);
+      return d;
+    };
+    const act = (id, daysAgo, type, name, extra) => {
+      const start = at(daysAgo, 17);
+      const local = new Date(start.getTime() + 2 * 3600e3).toISOString().slice(0, 19);
+      return { id, type, name, start_date: start.toISOString().replace(".000", ""), start_date_local: local, ...extra };
+    };
+    return send(res, 200, [
+      act("i9001", 5, "VirtualRide", "Rolle – Sweet Spot ERG", { moving_time: 3600, elapsed_time: 3660, distance: 33000, icu_average_watts: 205, icu_weighted_avg_watts: 214, average_heartrate: 142, device_name: "ELEMNT BOLT" }),
+      act("i9002", 6, "Run", "Intervalle am Dienstag", { moving_time: 2900, elapsed_time: 3000, distance: 9100, average_heartrate: 156, device_name: "Forerunner 265" }),
+      { id: "i9003", source: "STRAVA", _note: "Strava activities are not available via the API" },
+    ]);
+  }
+
+  send(res, 404, { error: "not found" });
+}
+
 // Base URL the *app* uses to reach this mock (may differ from the browser's).
 const PUBLIC_API_FOR_APP = (process.env.MOCK_APP_FACING_BASE ?? PUBLIC).replace(/\/$/, "") + "/garmin";
 
@@ -362,8 +466,9 @@ http
     const url = new URL(req.url, PUBLIC);
     try {
       if (url.pathname.startsWith("/wahoo")) return await wahoo(req, res, url, url.pathname.slice("/wahoo".length));
+      if (url.pathname.startsWith("/intervals")) return await intervals(req, res, url, url.pathname.slice("/intervals".length));
       if (url.pathname.startsWith("/garmin")) return await garmin(req, res, url, url.pathname.slice("/garmin".length));
-      if (url.pathname === "/report") return send(res, 200, { problems, events: events.length });
+      if (url.pathname === "/report") return send(res, 200, { problems, events: events.length, intervalsEvents: intervalsEvents.length, wahooIndoorWorkouts: wahooWorkouts.filter((w) => w.workout_type_id === 61).length });
       send(res, 404, { error: "not found" });
     } catch (e) {
       problem(`mock crashed on ${url.pathname}: ${e.message}`);

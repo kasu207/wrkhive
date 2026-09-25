@@ -86,6 +86,7 @@ export const garminAdapter: ProviderAdapter = {
   id: "garmin",
   name: "Garmin",
   devices: ["Forerunner", "fēnix", "Edge", "Venu", "epix", "Enduro"],
+  auth: "oauth",
 
   isConfigured() {
     const c = env.garmin();

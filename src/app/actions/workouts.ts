@@ -144,18 +144,19 @@ export async function unschedule(id: string): Promise<ActionResult> {
 
 const sendInput = z.object({
   workoutId: z.string().min(1).max(40),
-  provider: z.enum(["garmin", "wahoo"]),
+  provider: z.enum(["garmin", "wahoo", "intervals"]),
   date: z.string().nullable(),
   timeZone: z.string().max(64),
+  indoor: z.boolean().optional(),
 });
 
 export async function sendToDevice(input: z.input<typeof sendInput>): Promise<ActionResult> {
   const user = await requireUser();
   const parsed = sendInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Ungültige Anfrage." };
-  const { workoutId, provider, date, timeZone } = parsed.data;
+  const { workoutId, provider, date, timeZone, indoor } = parsed.data;
   if (date !== null && !isISODate(date)) return { ok: false, error: "Ungültiges Datum." };
-  const res = await sendWorkoutToDevice(user, workoutId, provider, date, timeZone || user.timeZone);
+  const res = await sendWorkoutToDevice(user, workoutId, provider, date, timeZone || user.timeZone, { indoor });
   revalidatePath(`/workouts/${workoutId}`);
   return res.ok ? { ok: true, message: res.message } : { ok: false, error: res.message };
 }

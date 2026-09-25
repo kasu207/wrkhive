@@ -96,7 +96,7 @@ export async function acceptPlan(messageId: string): Promise<ActionResult<{ plan
         startDate: plan.startDate,
         endDate: plan.endDate,
         summary: plan.summary,
-        weeks: plan.weeks.map(({ sessions: _sessions, ...meta }) => meta),
+        weeks: plan.weeks.map((w) => ({ index: w.index, startDate: w.startDate, focus: w.focus, phase: w.phase, targetTss: w.targetTss })),
       })
       .run();
     for (const week of plan.weeks) {

@@ -304,3 +304,14 @@ export async function sendWorkoutToDevice(user: User, workoutId: string, provide
     return { ok: false, message };
   }
 }
+
+/** Connections with continuous sync enabled whose last sync is older than `maxAgeMs`. */
+export function staleConnections(userId: string, maxAgeMs: number): DeviceConnection[] {
+  const now = Date.now();
+  return getDb()
+    .select()
+    .from(deviceConnections)
+    .where(eq(deviceConnections.userId, userId))
+    .all()
+    .filter((c) => c.autoSync && c.status !== "revoked" && (!c.lastSyncAt || now - c.lastSyncAt.getTime() > maxAgeMs));
+}

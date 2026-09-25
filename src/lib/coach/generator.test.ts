@@ -44,7 +44,7 @@ describe("plan generator", () => {
     expect(last.sessions[last.sessions.length - 1].name).toBe("Halbmarathon");
     for (const w of plan.weeks) for (const s of w.sessions) expect(() => parseStructure(s.structure)).not.toThrow();
     // No session after the event
-    for (const w of plan.weeks) for (const s of w.sessions) expect(w.startDate <= "2026-12-06").toBe(true);
+    for (const w of plan.weeks) expect(w.startDate <= "2026-12-06").toBe(true);
   });
 
   it("uses 3:1 loading", () => {

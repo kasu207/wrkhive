@@ -2,11 +2,14 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { activities, users, workouts } from "@/db/schema";
+import { activities, deviceConnections, users, workouts } from "@/db/schema";
 import { activityLoad, effectiveVo2max } from "@/lib/analytics/load";
-import { requireUser, thresholdsOf } from "@/lib/server/auth";
+import { destroySession, requireUser, thresholdsOf } from "@/lib/server/auth";
+import { decrypt } from "@/lib/server/crypto";
+import { PROVIDERS } from "@/lib/server/sync";
 import { summarize } from "@/lib/workout/metrics";
 import type { ActionResult } from "./workouts";
 
@@ -65,4 +68,23 @@ export async function updateProfile(input: Record<string, string>): Promise<Acti
   });
   revalidatePath("/", "layout");
   return { ok: true, message: "Gespeichert. Belastungswerte wurden neu berechnet." };
+}
+
+/** Permanently deletes the account and all data (cascades), after revoking provider access. */
+export async function deleteAccount(confirmation: string): Promise<ActionResult> {
+  const user = await requireUser();
+  if (confirmation.trim().toLowerCase() !== "löschen") return { ok: false, error: "Bitte tippe „löschen“ zur Bestätigung." };
+  const db = getDb();
+  for (const c of db.select().from(deviceConnections).where(eq(deviceConnections.userId, user.id)).all()) {
+    if (c.mode === "live" && c.accessToken) {
+      try {
+        await PROVIDERS[c.provider].revoke(decrypt(c.accessToken));
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+  db.delete(users).where(eq(users.id, user.id)).run();
+  await destroySession();
+  redirect("/");
 }

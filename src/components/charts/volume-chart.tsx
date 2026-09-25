@@ -92,7 +92,7 @@ export function VolumeChart({ weeks }: { weeks: VolumeWeek[] }) {
                       />
                     );
                   })}
-                  {i % Math.ceil(weeks.length / 6) === 0 || i === weeks.length - 1 ? (
+                  {(weeks.length - 1 - i) % Math.ceil(weeks.length / 6) === 0 ? (
                     <text x={cx} y={height - 6} textAnchor="middle" className="fill-ink-3 text-[10px] tabular">
                       KW {isoWeekNumber(w.week)}
                     </text>

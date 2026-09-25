@@ -84,7 +84,13 @@ export function SendDialog({
 
   const download = async (format: "fit" | "zwo" | "txt") => {
     const id = workoutId ?? (await ensureSaved());
-    if (id) window.location.href = `/api/workouts/${id}/export?format=${format}`;
+    if (!id) return;
+    const a = document.createElement("a");
+    a.href = `/api/workouts/${id}/export?format=${format}`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   return (

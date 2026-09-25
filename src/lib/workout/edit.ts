@@ -165,8 +165,9 @@ export function convertSport(structure: WorkoutStructure, sport: Sport): Workout
     return t;
   };
   const mapStep = (s: Step): Step => {
-    const { cadence: _c, ...rest } = s;
-    return { ...(sport === "ride" ? s : rest), target: mapTarget(s.target) };
+    const next: Step = { ...s, target: mapTarget(s.target) };
+    if (sport !== "ride") delete next.cadence;
+    return next;
   };
   return { sport, nodes: structure.nodes.map((n) => (n.type === "step" ? mapStep(n) : { ...n, steps: n.steps.map(mapStep) })) };
 }

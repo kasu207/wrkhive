@@ -123,7 +123,7 @@ export function WorkoutChart({
             const color = ZONE_COLOR[s.zone];
             return (
               <g
-                key={`${s.stepId}-${i}`}
+                key={i}
                 className={animate ? "animate-grow" : undefined}
                 style={{ transformBox: "fill-box", transformOrigin: "bottom", animationDelay: animate ? `${Math.min(i * 14, 420)}ms` : undefined, opacity: dim ? 0.45 : 1, transition: "opacity 150ms" }}
               >

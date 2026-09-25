@@ -5,7 +5,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import { ArrowLeft, Copy, Dumbbell, LayoutList, MoreHorizontal, Plus, Redo2, Repeat as RepeatIcon, Send, Trash2, Type, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useMemo, useState, useTransition } from "react";
 import { deleteWorkout, duplicateWorkout, saveWorkout } from "@/app/actions/workouts";
 import { SportIcon } from "@/components/brand";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ interface Initial {
 
 type Mode = "visual" | "text";
 
-export function WorkoutBuilder({ initial, thresholds, connections }: { initial: Initial; thresholds: Thresholds; connections: ConnectionInfo[] }) {
+export function WorkoutBuilder({ initial, thresholds, connections, resetKey }: { initial: Initial; thresholds: Thresholds; connections: ConnectionInfo[]; resetKey: string }) {
   const router = useRouter();
   const toast = useToast();
   const [id, setId] = useState(initial.id);
@@ -71,6 +71,23 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
   const [menuOpen, setMenuOpen] = useState(false);
   const sport = structure.sport;
 
+  // Navigating to another workout re-renders this same component instance:
+  // reset local state, unless the change is our own first save (new -> id).
+  const [loadedKey, setLoadedKey] = useState(resetKey);
+  if (resetKey !== loadedKey) {
+    setLoadedKey(resetKey);
+    if (resetKey !== id) {
+      setId(initial.id);
+      setName(initial.name);
+      setDescription(initial.description);
+      setHistory({ past: [], present: initial.structure, future: [] });
+      setDirty(initial.id === null);
+      setSelected(null);
+      setMode("visual");
+      setSendOpen(false);
+    }
+  }
+
   // Pure updaters only (safe under React strict mode double invocation).
   const setStructure = useCallback((next: WorkoutStructure | ((s: WorkoutStructure) => WorkoutStructure)) => {
     setHistory((h) => {
@@ -94,7 +111,7 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
   const summary = useMemo(() => summarize(structure, thresholds), [structure, thresholds]);
 
   // --- persistence -----------------------------------------------------------
-  const save = useCallback(async (): Promise<string | null> => {
+  const save = useCallback(async (opts: { navigate?: boolean } = {}): Promise<string | null> => {
     if (!structure.nodes.length) {
       toast({ tone: "error", title: "Das Workout ist leer", description: "Füge mindestens einen Schritt hinzu." });
       return null;
@@ -112,11 +129,12 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
     const newId = res.data!.id;
     if (!id) {
       setId(newId);
-      // Update the URL without remounting the builder (keeps open dialogs alive).
-      window.history.replaceState(null, "", `/workouts/${newId}`);
+      // Moving from /workouts/new to /workouts/<id> remounts the page segment.
+      // Do it right away for a plain save; while a dialog is open, defer it.
+      if (opts.navigate !== false) router.replace(`/workouts/${newId}`, { scroll: false });
     }
     return newId;
-  }, [structure, mode, textErrors, id, name, description, toast]);
+  }, [structure, mode, textErrors, id, name, description, toast, router]);
 
   const onSave = () =>
     startSaving(async () => {
@@ -124,15 +142,14 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
     });
 
   // Keyboard shortcuts
-  const saveRef = useRef(onSave);
-  saveRef.current = onSave;
+  const onSaveShortcut = useEffectEvent(onSave);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       if (e.key.toLowerCase() === "s") {
         e.preventDefault();
-        saveRef.current();
+        onSaveShortcut();
       }
       const inField = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
       if (e.key.toLowerCase() === "z" && !inField) {
@@ -180,6 +197,7 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
   }, [text, mode, sport, thresholds]);
 
   // --- visual editing ------------------------------------------------------------
+  const dndId = useId();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
@@ -373,7 +391,7 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
 
       {mode === "visual" ? (
         <div className="space-y-2.5">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <DndContext id={dndId} sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={structure.nodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
               {structure.nodes.map((node, index) => (
                 <SortableNode key={node.id} id={node.id}>
@@ -470,7 +488,17 @@ export function WorkoutBuilder({ initial, thresholds, connections }: { initial: 
           setNodes((nodes) => [...nodes, newExerciseBlock(c.key, c.sets, c.reps, c.weightKg, c.restSeconds)]);
         }}
       />
-      <SendDialog open={sendOpen} onClose={() => setSendOpen(false)} workoutId={dirty ? null : id} structure={structure} connections={connections} ensureSaved={save} />
+      <SendDialog
+        open={sendOpen}
+        onClose={() => {
+          setSendOpen(false);
+          if (id && initial.id === null) router.replace(`/workouts/${id}`, { scroll: false });
+        }}
+        workoutId={dirty ? null : id}
+        structure={structure}
+        connections={connections}
+        ensureSaved={() => save({ navigate: false })}
+      />
     </div>
   );
 }
@@ -511,7 +539,7 @@ function TextEditor({ text, onChange, errors, sport }: { text: string; onChange:
   const errorLines = new Set(errors.map((e) => e.line));
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-      <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card focus-within:border-focus focus-within:shadow-[0_0_0_3px_rgb(42_120_214/0.15)]">
+      <div className="self-start overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card focus-within:border-focus focus-within:shadow-[0_0_0_3px_rgb(42_120_214/0.15)]">
         <div className="flex">
           <div aria-hidden className="select-none border-r border-border bg-surface-2 px-2.5 py-3 text-right font-mono text-[13px] leading-6 text-ink-3">
             {Array.from({ length: Math.max(lines, 6) }, (_, i) => (

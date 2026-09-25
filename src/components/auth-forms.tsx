@@ -1,14 +1,21 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { login, signup, startDemo, type AuthState } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 
-function useTimeZone() {
-  const [tz, setTz] = useState("");
-  useEffect(() => setTz(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
-  return tz;
+/** Hidden field filled with the browser's time zone after mount. */
+function TimeZoneField() {
+  return (
+    <input
+      type="hidden"
+      name="timeZone"
+      ref={(el) => {
+        if (el) el.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      }}
+    />
+  );
 }
 
 export function LoginForm({ next }: { next?: string }) {
@@ -32,10 +39,9 @@ export function LoginForm({ next }: { next?: string }) {
 
 export function SignupForm() {
   const [state, action, pending] = useActionState<AuthState, FormData>(signup, undefined);
-  const tz = useTimeZone();
   return (
     <form action={action} className="space-y-4">
-      <input type="hidden" name="timeZone" value={tz} />
+      <TimeZoneField />
       <Field label="Name" htmlFor="name" error={state?.fieldErrors?.name}>
         <Input id="name" name="name" autoComplete="given-name" required autoFocus aria-invalid={!!state?.fieldErrors?.name} />
       </Field>
@@ -53,11 +59,10 @@ export function SignupForm() {
 }
 
 export function DemoButton({ variant = "secondary", size = "lg", className, children = "Demo ansehen" }: { variant?: "secondary" | "primary" | "brand" | "ghost"; size?: "md" | "lg"; className?: string; children?: React.ReactNode }) {
-  const tz = useTimeZone();
   const [pending, setPending] = useState(false);
   return (
     <form action={startDemo} onSubmit={() => setPending(true)}>
-      <input type="hidden" name="timeZone" value={tz} />
+      <TimeZoneField />
       <Button type="submit" variant={variant} size={size} className={className} loading={pending}>
         {children}
       </Button>

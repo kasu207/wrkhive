@@ -116,7 +116,7 @@ export async function handlePlanRequest(user: User, req: Omit<PlanRequest, "star
   db.insert(coachMessages).values({ id: newId(), userId: user.id, role: "user", content: text }).run();
   const plan = generatePlan({ ...req, startDate: todayFor(user) }, thresholdsOf(user));
   const result: CoachResult = {
-    content: `Hier ist dein Plan **${plan.name}**. ${plan.summary} Schau ihn dir an und übernimm ihn mit einem Klick in deinen Kalender.`,
+    content: `Hier ist dein Plan **${plan.name}**. Schau ihn dir an und übernimm ihn mit einem Klick in deinen Kalender. Jede Einheit kannst du danach noch anpassen.`,
     payload: { kind: "plan", plan },
     engine: "rules",
   };
@@ -300,7 +300,7 @@ function rulesReply(user: User, message: string): CoachResult {
       t,
     );
     return {
-      content: `Hier ist ein Vorschlag: **${plan.name}**. ${plan.summary} Mit dem Planassistenten kannst du Trainingstage, Umfang und Wettkampfdatum genau festlegen.`,
+      content: `Hier ist ein Vorschlag: **${plan.name}**. Mit dem Planassistenten (Reiter „Trainingsplan“) kannst du Trainingstage, Umfang und Wettkampfdatum genau festlegen.`,
       payload: { kind: "plan", plan },
       engine: "rules",
     };

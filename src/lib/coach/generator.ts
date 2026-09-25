@@ -220,6 +220,15 @@ const PHASE_LABEL: Record<Phase, string> = {
   race: "Wettkampfwoche",
 };
 
+const PHASE_FOCUS: Record<Phase, string> = {
+  base: "Aerobe Basis aufbauen, Tempo dosiert",
+  build: "Schwelle und VO2max entwickeln",
+  peak: "Wettkampfspezifisch, hohe Qualität",
+  taper: "Umfang reduzieren, Frische aufbauen",
+  recovery: "Erholen und Anpassungen festigen",
+  race: "Locker bleiben, Beine wach halten",
+};
+
 export function planPhases(weeks: number, hasEvent: boolean): Phase[] {
   const phases: Phase[] = [];
   const raceWeeks = hasEvent ? 1 : 0;
@@ -311,7 +320,10 @@ export function generatePlan(req: PlanRequest, t: Thresholds): PlanProposal {
     const progression = phase === "recovery" ? 1 : 1 + blockPos * 0.05;
     const weeklyMinutes = req.hoursPerWeek * 60 * VOLUME[phase] * progression;
     const specs = sessionSpecs(req, phase, i);
-    const totalShare = specs.reduce((a, s) => a + s.share, 0);
+    // Strength sessions have a fixed length; the rest of the time goes to endurance.
+    const strengthCount = specs.filter((s) => s.sport === "strength").length;
+    const enduranceMinutes = Math.max(60, weeklyMinutes - strengthCount * 45);
+    const totalShare = specs.filter((s) => s.sport !== "strength").reduce((a, s) => a + s.share, 0);
     const sessions: PlannedSession[] = [];
 
     for (const spec of specs) {
@@ -322,9 +334,14 @@ export function generatePlan(req: PlanRequest, t: Thresholds): PlanProposal {
         sessions.push(eventSession(req, spec.day, t));
         continue;
       }
-      const minutes = r5((weeklyMinutes * spec.share) / totalShare);
+      const raw = (enduranceMinutes * spec.share) / totalShare;
+      // Keep single sessions within sensible bounds (long runs beyond ~2 h add injury risk).
+      const cap = spec.sport === "run" ? (spec.share > 0.3 ? 120 : 75) : spec.share > 0.3 ? 300 : 120;
+      const minutes = r5(Math.min(cap, raw));
       const w = generateWorkout(spec.sport, spec.focus, spec.sport === "strength" ? 45 : minutes, t);
-      sessions.push({ day: spec.day, name: w.name, description: w.description, sport: w.sport, structure: w.structure });
+      const isLong = spec.share > 0.3 && spec.focus === "endurance";
+      const name = isLong ? (spec.sport === "run" ? `Langer Lauf ${minutes} min` : `Lange Ausfahrt ${Math.round((minutes / 60) * 10) / 10} h`.replace(".", ",")) : w.name;
+      sessions.push({ day: spec.day, name, description: w.description, sport: w.sport, structure: w.structure });
     }
     if (req.eventDate && req.eventDate >= weekStart && req.eventDate <= addDays(weekStart, 6) && !sessions.some((s) => addDays(weekStart, s.day) === req.eventDate)) {
       sessions.push(eventSession(req, diffDays(req.eventDate, weekStart), t));
@@ -332,7 +349,7 @@ export function generatePlan(req: PlanRequest, t: Thresholds): PlanProposal {
     }
 
     const targetTss = Math.round(sessions.reduce((a, s) => a + summarize(s.structure, t).tss, 0));
-    weeks.push({ index: i, startDate: weekStart, phase, focus: PHASE_LABEL[phase], targetTss, sessions });
+    weeks.push({ index: i, startDate: weekStart, phase, focus: PHASE_FOCUS[phase], targetTss, sessions });
   });
 
   const endDate = addDays(start, weeksCount * 7 - 1);

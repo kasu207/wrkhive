@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatPace } from "@/lib/format";
 import type { Duration, Sport, Step, Target, TargetType, Thresholds } from "@/lib/workout/types";
@@ -36,14 +36,7 @@ export function formatTimeInput(seconds: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** Text input that commits a parsed value on blur / Enter and reverts invalid input. */
-function CommitInput({
-  value,
-  format,
-  parse,
-  className,
-  ...rest
-}: {
+interface CommitInputProps {
   value: number;
   format: (v: number) => string;
   parse: (s: string) => number | null;
@@ -51,16 +44,20 @@ function CommitInput({
   "aria-label": string;
   onCommit: (v: number) => void;
   inputMode?: "numeric" | "decimal" | "text";
-}) {
-  const { onCommit, inputMode, ...aria } = rest;
-  const formatted = format(value);
+}
+
+/**
+ * Text input that commits a parsed value on blur / Enter and flags invalid
+ * input. Keyed by the formatted value so external changes reset the draft.
+ */
+function CommitInput(props: CommitInputProps) {
+  const formatted = props.format(props.value);
+  return <CommitInputInner key={formatted} formatted={formatted} {...props} />;
+}
+
+function CommitInputInner({ formatted, parse, className, onCommit, inputMode, "aria-label": ariaLabel }: CommitInputProps & { formatted: string }) {
   const [draft, setDraft] = useState(formatted);
   const [invalid, setInvalid] = useState(false);
-  // Re-sync only when the displayed value actually changes.
-  useEffect(() => {
-    setDraft(formatted);
-    setInvalid(false);
-  }, [formatted]);
   const commit = () => {
     if (draft.trim() === formatted) {
       setInvalid(false);
@@ -76,7 +73,7 @@ function CommitInput({
   };
   return (
     <input
-      {...aria}
+      aria-label={ariaLabel}
       inputMode={inputMode}
       value={draft}
       aria-invalid={invalid || undefined}

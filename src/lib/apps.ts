@@ -126,7 +126,7 @@ export const APPS: AppInfo[] = [
       { via: "intervals", text: "Über intervals.icu auf den ELEMNT (nächste 7 Tage)" },
     ],
     setup: [
-      "Direkt (empfohlen): unten in der Wahoo-Karte verbinden. Ist für diese Installation noch keine Wahoo-App hinterlegt, legst du dort einmalig eine kostenlose persönliche App an (etwa 5 Minuten, ohne Prüfung durch Wahoo).",
+      "Direkt (empfohlen): unten in der Wahoo-Karte verbinden. Ist für diese Installation noch keine Wahoo-App hinterlegt, legst du dort einmalig eine kostenlose persönliche App an (Wahoo prüft neue Apps, das dauert einige Tage; bis dahin geht es über intervals.icu).",
       "Danach auf dem ELEMNT unter „Geplante Workouts“ starten; ein gekoppelter Smart-Trainer wird im ERG-Modus gesteuert.",
     ],
     link: { label: "Wahoo-Entwicklerportal", href: "https://developers.wahooligan.com/" },

@@ -225,7 +225,7 @@ export function DeviceCard({ provider, name, auth, intro, selfService, devices, 
           {!configured && auth === "oauth" ? (
             <p className="mt-2 text-[12px] leading-relaxed text-ink-3">
               {canSetup
-                ? `Einmalig eine kostenlose persönliche ${name}-App anlegen (etwa 5 Minuten), dann ist dein Konto direkt verbunden.`
+                ? `Einmalig eine kostenlose persönliche ${name}-App anlegen. ${name} prüft neue Apps, das dauert einige Tage; danach ist dein Konto direkt verbunden.`
                 : `Für diese Installation sind keine ${name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.`}
             </p>
           ) : null}

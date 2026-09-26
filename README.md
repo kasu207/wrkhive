@@ -49,7 +49,7 @@ Jede Aktivität trägt ihre Quell-App (Filter in „Aktivitäten“). Kommt dies
 
 ### Wahoo ELEMNT direkt (empfohlen für Wahoo)
 
-Wahoo gibt Workouts nur an registrierte Apps weiter. Für den eigenen Gebrauch reicht eine kostenlose persönliche App im **Sandbox-Modus**: sofort nutzbar, ohne Prüfung durch Wahoo, bis zu 250 API-Abfragen am Tag (genug für Senden und Abgleich alle 30 Minuten). Die Einrichtung läuft komplett in Wrkhive:
+Wahoo gibt Workouts nur an registrierte Apps weiter. Für den eigenen Gebrauch reicht eine kostenlose persönliche App im **Sandbox-Modus** mit bis zu 250 API-Abfragen am Tag (genug für Senden und Abgleich alle 30 Minuten). Wahoo prüft jede neue App, auch Sandbox-Apps; Nutzer berichten von 5 bis 7 Tagen Wartezeit. Bis zur Freigabe gehen Workouts über intervals.icu auf den ELEMNT (siehe unten). Die Einrichtung läuft komplett in Wrkhive:
 
 1. **Geräte → Wahoo → „Wahoo einrichten“.** Der Dialog zeigt die Redirect-URI und die Scopes zum Kopieren.
 2. Im [Wahoo-Entwicklerportal](https://developers.wahooligan.com/) registrieren, unter **My Apps → Add a new app**: Typ *Confidential*, Umgebung *Sandbox*, Redirect-URI und Scopes einfügen.

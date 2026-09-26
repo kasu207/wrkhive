@@ -87,7 +87,7 @@ export function WahooSetupDialog({ open, onClose, setup }: { open: boolean; onCl
       open={open}
       onClose={onClose}
       title="Wahoo direkt verbinden"
-      description="Einmalig, etwa 5 Minuten. Danach landen Workouts mit einem Klick auf deinem ELEMNT."
+      description="Einmalig. Nach der Freigabe durch Wahoo landen Workouts mit einem Klick auf deinem ELEMNT."
       footer={
         <>
           {setup.source === "ui" ? (
@@ -112,7 +112,7 @@ export function WahooSetupDialog({ open, onClose, setup }: { open: boolean; onCl
         }}
       >
         <p className="text-[14px] leading-relaxed text-ink-2">
-          Wahoo gibt Workouts nur an registrierte Apps weiter. Für den eigenen Gebrauch legst du dir dafür kostenlos eine persönliche App an. Sie ist sofort nutzbar, Wahoo muss nichts prüfen.
+          Wahoo gibt Workouts nur an registrierte Apps weiter. Für den eigenen Gebrauch legst du dir dafür kostenlos eine persönliche App an. Wahoo prüft jede neue App, das dauert erfahrungsgemäß 5 bis 7 Tage. Client-ID und Secret trägst du hier ein, sobald die App freigegeben ist. Bis dahin kommen Workouts über intervals.icu auf den ELEMNT.
         </p>
         <ol className="space-y-4 text-[14px] leading-relaxed text-ink-2">
           <li className="flex gap-3">

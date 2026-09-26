@@ -73,8 +73,23 @@ function markError(connectionId: string, e: unknown) {
 /** Metrics a duplicate from another source may fill in when the kept record lacks them. */
 const MERGEABLE = ["movingSec", "distanceM", "elevationGainM", "avgHr", "maxHr", "avgPower", "normPower", "avgCadence", "avgSpeed", "calories", "hrZoneSec"] as const;
 
-/** Two recordings are the same session when sport matches and they start within this window. */
+/** Two recordings of the same sport are one session when they start within this window ... */
 const DUPLICATE_WINDOW_MS = 5 * 60_000;
+/** ... or overlap in time by at least this share of the shorter one (watch started early, app later). */
+const DUPLICATE_OVERLAP = 0.5;
+/** Longest session considered when looking for overlaps. */
+const MAX_SESSION_MS = 12 * 3600_000;
+
+type Span = { startTime: Date; durationSec: number };
+/** True when two recordings describe the same session. */
+export function isSameSession(a: Span, b: Span): boolean {
+  const aStart = a.startTime.getTime();
+  const bStart = b.startTime.getTime();
+  if (Math.abs(aStart - bStart) <= DUPLICATE_WINDOW_MS) return true;
+  const overlap = Math.min(aStart + a.durationSec * 1000, bStart + b.durationSec * 1000) - Math.max(aStart, bStart);
+  const shorter = Math.min(a.durationSec, b.durationSec) * 1000;
+  return shorter > 0 && overlap >= shorter * DUPLICATE_OVERLAP;
+}
 
 /**
  * Inserts or updates activities and derives training load.
@@ -83,7 +98,8 @@ const DUPLICATE_WINDOW_MS = 5 * 60_000;
  * ELEMNT via Wahoo and the MyWhoosh ride via intervals.icu) or repeatedly
  * from one source with new ids (MyWhoosh uploads rides to intervals.icu
  * multiple times). Recordings of the same sport starting within 5 minutes
- * are merged into the first record: missing metrics (e.g. power from the
+ * or overlapping by at least half of the shorter one (the watch started
+ * before the trainer app) are merged into the first record: missing metrics (e.g. power from the
  * trainer app, heart rate from the watch) are filled in, the training app
  * is preferred as the source, and the load is recomputed. Matching planned
  * workouts are marked as done.
@@ -146,11 +162,14 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
           and(
             eq(activities.userId, user.id),
             eq(activities.sport, a.sport),
-            gte(activities.startTime, new Date(a.startTime.getTime() - DUPLICATE_WINDOW_MS)),
-            lte(activities.startTime, new Date(a.startTime.getTime() + DUPLICATE_WINDOW_MS)),
+            gte(activities.startTime, new Date(a.startTime.getTime() - MAX_SESSION_MS)),
+            lte(activities.startTime, new Date(a.startTime.getTime() + Math.max(a.durationSec * 1000, DUPLICATE_WINDOW_MS))),
           ),
         )
-        .get();
+        .all()
+        .filter((c) => isSameSession(c, a))
+        // Closest start first.
+        .sort((x, y) => Math.abs(x.startTime.getTime() - a.startTime.getTime()) - Math.abs(y.startTime.getTime() - a.startTime.getTime()))[0];
       if (duplicate) {
         const patch: Partial<typeof activities.$inferInsert> = {};
         for (const k of MERGEABLE) {
@@ -160,7 +179,9 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
         else if (!duplicate.sourceApp && sourceApp) patch.sourceApp = sourceApp;
         if (Object.keys(patch).length) {
           const combined = { ...duplicate, ...patch };
-          const l = activityLoad(combined, model);
+          // Power taken over from the other recording covers that recording's time, not the (often longer) watch session.
+          const powerFromNew = patch.normPower !== undefined || patch.avgPower !== undefined;
+          const l = activityLoad(powerFromNew ? { ...combined, durationSec: values.durationSec, movingSec: values.movingSec } : combined, model);
           tx.update(activities)
             .set({ ...patch, tss: l.tss, tssMethod: l.method, vo2maxEst: vo2Of(combined) ?? duplicate.vo2maxEst })
             .where(eq(activities.id, duplicate.id))

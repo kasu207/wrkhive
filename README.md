@@ -43,7 +43,7 @@ Unter **Geräte** („Apps & Geräte“) zeigt Wrkhive für jede App, woher die 
 | **ROUVY** | über intervals.icu („Workout of the day“) oder ZWO-Upload im Webportal | über intervals.icu |
 | **Freeletics** | nicht möglich (keine Schnittstelle) | Apple Health / Health Connect, per Companion-App nach intervals.icu |
 
-Jede Aktivität trägt ihre Quell-App (Filter in „Aktivitäten“). Kommt dieselbe Einheit mehrfach an, etwa vom ELEMNT über Wahoo und von MyWhoosh über intervals.icu, oder lädt MyWhoosh eine Fahrt doppelt hoch, führt Wrkhive sie zusammen: gleiche Sportart, Start innerhalb von 5 Minuten. Fehlende Werte werden ergänzt (Leistung aus der Trainings-App, Puls von der Uhr), die Belastung wird neu berechnet.
+Jede Aktivität trägt ihre Quell-App (Filter in „Aktivitäten“). Kommt dieselbe Einheit mehrfach an, etwa vom ELEMNT über Wahoo und von MyWhoosh über intervals.icu, oder lädt MyWhoosh eine Fahrt doppelt hoch, führt Wrkhive sie zusammen: gleiche Sportart und Start innerhalb von 5 Minuten oder zeitliche Überschneidung von mindestens der Hälfte (etwa wenn die Uhr vor der Trainings-App gestartet wurde). Fehlende Werte werden ergänzt (Leistung aus der Trainings-App, Puls von der Uhr), die Belastung wird neu berechnet.
 
 **Strava** ist bewusst nicht angebunden: Seit Juni 2026 braucht jeder Entwickler ein bezahltes Strava-Abo für den API-Zugang, die API-Bedingungen verbieten die Nutzung der Daten in KI-Anwendungen (Wrkhive hat einen KI-Coach), und für die genannten Apps gibt es über intervals.icu bzw. direkt einen Weg ohne Strava.
 

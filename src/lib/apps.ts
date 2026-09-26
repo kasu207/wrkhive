@@ -152,7 +152,10 @@ export const APPS: AppInfo[] = [
     name: "MyWhoosh",
     kind: "app",
     tagline: "Kostenloses Indoor-Training",
-    activities: [{ via: "intervals", text: "Über intervals.icu (offizielle MyWhoosh-Anbindung)" }],
+    activities: [
+      { via: "intervals", text: "Über intervals.icu (offizielle MyWhoosh-Anbindung)" },
+      { via: "file", text: "FIT-Datei auf mywhoosh.com unter Profil > Activity Files herunterladen und importieren" },
+    ],
     workouts: [{ via: "intervals", text: "Über intervals.icu in den MyWhoosh-Kalender" }],
     setup: ["In der MyWhoosh-App unter Connections intervals.icu verbinden.", "Geplante Workouts erscheinen in MyWhoosh, Fahrten landen automatisch in intervals.icu."],
     link: null,

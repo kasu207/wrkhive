@@ -33,7 +33,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 
 const { getDb } = await import("@/db");
 const schema = await import("@/db/schema");
-const { upsertActivities, syncConnection, todayFor } = await import("./sync");
+const { isSameSession, upsertActivities, syncConnection, todayFor } = await import("./sync");
 const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
 const { pmcFor } = await import("./training");
@@ -100,8 +100,34 @@ describe("activities sync (demo provider)", () => {
     const rows = db.select().from(schema.activities).all().filter((x) => x.userId === user.id && x.date === "2024-03-10");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ provider: "wahoo", avgHr: 140, normPower: 220, sourceApp: "mywhoosh", tssMethod: "power" });
-    // Load now comes from power: (220/250)^2 * 100 for one hour.
-    expect(rows[0].tss).toBeCloseTo(77.4, 1);
+    // Load now comes from power over the MyWhoosh ride's duration: (220/250)^2 * 100 * 3550/3600.
+    expect(rows[0].tss).toBeCloseTo(76.4, 1);
+  });
+
+  it("recognizes the same session by start or overlap", () => {
+    const t = (min: number) => new Date(Date.UTC(2024, 2, 11, 17, min));
+    expect(isSameSession({ startTime: t(0), durationSec: 3600 }, { startTime: t(4), durationSec: 3300 })).toBe(true);
+    // Watch started 12 minutes before the MyWhoosh ride.
+    expect(isSameSession({ startTime: t(0), durationSec: 4200 }, { startTime: t(12), durationSec: 3600 })).toBe(true);
+    // Two separate rides the same afternoon.
+    expect(isSameSession({ startTime: t(0), durationSec: 1800 }, { startTime: t(40), durationSec: 1800 })).toBe(false);
+    // Short warm-up ride before a longer one: barely overlapping.
+    expect(isSameSession({ startTime: t(0), durationSec: 1200 }, { startTime: t(15), durationSec: 3600 })).toBe(false);
+  });
+
+  it("adds MyWhoosh power to a heart-rate-only watch recording started earlier", () => {
+    const start = new Date("2024-04-02T16:50:00Z");
+    upsertActivities(user, { id: null, provider: "manual" }, [
+      { externalId: "watch-indoor", sport: "ride", name: "Indoor Cycling", startTime: start, durationSec: 4000, avgHr: 138, deviceName: "Garmin Forerunner 265" },
+    ]);
+    const r = upsertActivities(user, { id: null, provider: "manual" }, [
+      { externalId: "fit-mywhoosh", sport: "ride", name: "MyWhoosh", startTime: new Date(start.getTime() + 11 * 60_000), durationSec: 3500, avgPower: 190, normPower: 205, sourceApp: "mywhoosh" },
+    ]);
+    expect(r).toMatchObject({ inserted: 0, merged: 1 });
+    const row = getDb().select().from(schema.activities).all().find((x) => x.externalId === "watch-indoor")!;
+    expect(row).toMatchObject({ avgHr: 138, normPower: 205, sourceApp: "mywhoosh", tssMethod: "power" });
+    // Load from the MyWhoosh ride's own duration: (205/250)^2 * 100 * 3500/3600.
+    expect(row.tss).toBeCloseTo(65.4, 1);
   });
 
   it("marks a planned workout as done when a matching activity arrives", () => {

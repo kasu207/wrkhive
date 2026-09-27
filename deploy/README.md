@@ -129,6 +129,18 @@ ssh root@DEINE_SERVER_IP 'cd /opt/wrkhive && ./deploy/restore.sh backups/wrkhive
 
 Dein lokales Konto existiert dann auf dem Server; die Registrierung bleibt geschlossen. Die lokale Datei danach löschen.
 
+## Konten verwalten
+
+Auch bei geschlossener Registrierung lassen sich Konten auf dem Server anlegen:
+
+```bash
+docker exec wrkhive-app node scripts/users.mjs list
+docker exec wrkhive-app node scripts/users.mjs add <email> <name> <passwort>
+docker exec wrkhive-app node scripts/users.mjs passwd <email> <neues-passwort>
+```
+
+Neue Konten durchlaufen beim ersten Anmelden die Einrichtung. `passwd` meldet das Konto überall ab. Das Passwort steht danach in der Shell-History; wer das nicht will, setzt vor den Befehl ein Leerzeichen (bei Standard-Bash wird die Zeile dann nicht gespeichert).
+
 ## Nützliche Befehle
 
 | Zweck | Befehl |

@@ -37,6 +37,8 @@ RUN groupadd --system --gid 1001 wrkhive \
 COPY --from=build --chown=wrkhive:wrkhive /app/.next/standalone ./
 COPY --from=build --chown=wrkhive:wrkhive /app/.next/static ./.next/static
 COPY --from=build --chown=wrkhive:wrkhive /app/drizzle ./drizzle
+# Account administration (docker exec wrkhive-app node scripts/users.mjs ...)
+COPY --from=build --chown=wrkhive:wrkhive /app/scripts/users.mjs ./scripts/users.mjs
 
 USER wrkhive
 VOLUME ["/data"]

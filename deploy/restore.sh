@@ -10,6 +10,7 @@ if [ -z "$file" ] || [ ! -f "$file" ]; then
   exit 1
 fi
 COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)
+if ! grep -Eq '^PROXY=external' .env.production; then COMPOSE+=(--profile caddy); fi
 # Projektname "wrkhive-prod" (docker-compose.prod.yml) -> Volume-Name.
 volume=wrkhive-prod_wrkhive-data
 
@@ -18,7 +19,7 @@ if docker ps --format '{{.Names}}' | grep -qx wrkhive-app; then
 fi
 "${COMPOSE[@]}" stop wrkhive
 # Bei einem Fehler Wrkhive in jedem Fall wieder starten.
-trap '"${COMPOSE[@]}" up -d wrkhive caddy' ERR
+trap '"${COMPOSE[@]}" up -d' ERR
 dir="$(cd "$(dirname "$file")" && pwd)"
 name="$(basename "$file")"
 # Als root kopieren (Sicherungen sind nur für root lesbar), danach dem App-Nutzer (1001) übergeben.

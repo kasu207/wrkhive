@@ -25,7 +25,7 @@ Läuft auf dem Server schon ein anderer Webserver auf Port 80/443 (z. B. nginx, 
 sudo ss -tlnp | grep -E ':(80|443) '
 ```
 
-Wenn dort etwas steht, siehe „Server mit bestehendem Reverse Proxy“ unten.
+Wenn dort etwas steht (z. B. `caddy` oder `nginx`, über den schon andere Seiten laufen), in `.env.production` `PROXY=external` setzen und nach „Server mit bestehendem Reverse Proxy“ unten vorgehen.
 
 ## 3. Code auf den Server holen
 
@@ -150,11 +150,39 @@ echo '/swapfile none swap sw 0 0' >> /etc/fstab
 
 ## Server mit bestehendem Reverse Proxy
 
-Belegt schon ein anderer Proxy Port 80/443, den `caddy`-Dienst nicht starten und Wrkhive an den vorhandenen Proxy hängen:
+Läuft auf dem Server schon ein Webserver auf Port 80/443 (Fehler beim Start: `failed to bind host port 0.0.0.0:80/tcp: address already in use`), startet Wrkhive ohne eigenen Caddy und dein vorhandener Webserver leitet die Domain weiter.
 
-- Wrkhive lauscht im Container auf Port 3000 (`wrkhive-app:3000`). Den bestehenden Proxy auf diese Adresse zeigen lassen, z. B. indem beide Container im selben Docker-Netzwerk sind, oder in `docker-compose.prod.yml` beim Dienst `wrkhive` `ports: ["127.0.0.1:3000:3000"]` ergänzen und auf `http://127.0.0.1:3000` weiterleiten.
-- Der Proxy muss `X-Forwarded-Proto: https` setzen (nginx: `proxy_set_header X-Forwarded-Proto $scheme;`), sonst sind die Anmelde-Cookies nicht als sicher markiert.
-- Starten dann mit `docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build wrkhive`.
+1. In `.env.production` setzen:
+   ```
+   PROXY=external
+   APP_PORT=3200
+   ```
+   `APP_PORT` muss ein freier Port sein (prüfen mit `sudo ss -tlnp | grep :3200`). Wrkhive ist darauf nur lokal erreichbar (`127.0.0.1`), nicht aus dem Internet.
+
+2. Den fehlgeschlagenen Caddy-Container entfernen und neu starten:
+   ```bash
+   docker rm -f wrkhive-caddy 2>/dev/null; ./deploy/deploy.sh
+   ```
+
+3. Eintrag im vorhandenen Webserver ergänzen.
+
+   **Caddy auf dem Server** (`/etc/caddy/Caddyfile`), neuer Block am Ende:
+   ```
+   wrkhive.deine-domain.de {
+   	encode zstd gzip
+   	request_body {
+   		max_size 70MB
+   	}
+   	reverse_proxy 127.0.0.1:3200
+   }
+   ```
+   Prüfen und übernehmen, ohne die anderen Seiten zu unterbrechen:
+   ```bash
+   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy
+   ```
+   Caddy holt das Zertifikat für die neue Domain selbst und setzt `X-Forwarded-Proto`.
+
+   **nginx:** `proxy_pass http://127.0.0.1:3200;` mit `proxy_set_header Host $host;`, `proxy_set_header X-Forwarded-Proto $scheme;`, `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` und `client_max_body_size 70m;`, Zertifikat z. B. per certbot.
 
 ## Nach dem Umzug auf HTTPS
 

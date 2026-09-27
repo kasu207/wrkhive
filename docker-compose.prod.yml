@@ -1,10 +1,10 @@
-# Produktivbetrieb auf einem eigenen Server (z. B. Hetzner) mit automatischem
-# HTTPS über Caddy (Let's Encrypt). Anleitung: deploy/README.md
+# Produktivbetrieb auf einem eigenen Server (z. B. Hetzner). Anleitung: deploy/README.md
 #
 #   ./deploy/deploy.sh
 #
-# bzw. von Hand:
-#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# PROXY=caddy (Standard): mitgelieferter Caddy auf Port 80/443 mit automatischem HTTPS.
+# PROXY=external: ein vorhandener Reverse Proxy (z. B. Caddy/nginx auf dem Server)
+#   leitet auf 127.0.0.1:${APP_PORT} weiter; der mitgelieferte Caddy startet nicht.
 
 name: wrkhive-prod
 
@@ -17,9 +17,10 @@ services:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
     image: wrkhive:prod
     container_name: wrkhive-app
-    # Kein veröffentlichter Port: nur Caddy ist von außen erreichbar.
-    expose:
-      - "3000"
+    # Nur lokal auf dem Server erreichbar (für einen vorhandenen Reverse Proxy),
+    # nie direkt aus dem Internet.
+    ports:
+      - "127.0.0.1:${APP_PORT:-3200}:3000"
     env_file:
       - path: .env.production
         required: true
@@ -39,6 +40,8 @@ services:
         max-file: "5"
 
   caddy:
+    # Nur mit PROXY=caddy (deploy.sh aktiviert das Profil).
+    profiles: ["caddy"]
     image: ${CADDY_IMAGE:-caddy:2}
     container_name: wrkhive-caddy
     ports:
@@ -47,7 +50,7 @@ services:
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN in .env.production setzen}
-      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL in .env.production setzen}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

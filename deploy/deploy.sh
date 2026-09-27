@@ -5,10 +5,23 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)
-
 if [ ! -f .env.production ]; then
   echo "Fehlt: .env.production. Vorlage: cp deploy/env.production.example .env.production" >&2
+  exit 1
+fi
+env_value() { grep -E "^$1=" .env.production | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'"; }
+
+PROXY=$(env_value PROXY)
+PROXY=${PROXY:-caddy}
+COMPOSE=(docker compose -f docker-compose.prod.yml --env-file .env.production)
+if [ "$PROXY" = "caddy" ]; then
+  COMPOSE+=(--profile caddy)
+  if [ -z "$(env_value ACME_EMAIL)" ]; then
+    echo "ACME_EMAIL in .env.production fehlt (nötig für das HTTPS-Zertifikat)." >&2
+    exit 1
+  fi
+elif [ "$PROXY" != "external" ]; then
+  echo "PROXY muss caddy oder external sein (ist: $PROXY)." >&2
   exit 1
 fi
 if ! grep -Eq '^APP_SECRET=.{32,}' .env.production; then
@@ -41,5 +54,10 @@ if [ "$status" != "healthy" ]; then
   echo "Wrkhive ist nicht gesund (Status: ${status:-unbekannt}). Logs: docker logs wrkhive-app" >&2
   exit 1
 fi
-domain=$(grep -E '^DOMAIN=' .env.production | cut -d= -f2-)
-echo "Wrkhive läuft: https://${domain}"
+domain=$(env_value DOMAIN)
+if [ "$PROXY" = "external" ]; then
+  port=$(env_value APP_PORT)
+  echo "Wrkhive läuft lokal auf 127.0.0.1:${port:-3200}. Dein Reverse Proxy muss https://${domain} dorthin weiterleiten."
+else
+  echo "Wrkhive läuft: https://${domain}"
+fi

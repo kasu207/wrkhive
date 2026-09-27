@@ -2,6 +2,10 @@
 
 Strukturierte Workouts für **Radfahren, Laufen und Krafttraining** in Sekunden erstellen und mit einem Klick an **Garmin** oder **Wahoo** senden. Dazu gibt es einen **KI-Coach** für spontane Einheiten und periodisierte Trainingspläne sowie ein **Dashboard** mit Fitness, Ermüdung, Form, Umfängen, Pulszonen, VO2max und Wettkampfprognosen. Aktivitäten von Uhr und Radcomputer kommen per **Dauer-Sync** oder **FIT-Import** automatisch dazu.
 
+## Auf einen eigenen Server bringen
+
+Für den Produktivbetrieb (z. B. Hetzner mit Docker) gibt es ein fertiges Setup mit automatischem HTTPS, geschlossener Registrierung, Sicherung und Updates per Befehl: siehe [deploy/README.md](deploy/README.md).
+
 ## Schnellstart mit Docker Desktop
 
 Voraussetzung: [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows, macOS oder Linux).
@@ -196,6 +200,8 @@ Alle Variablen mit Erklärung stehen in `.env.example`. Die wichtigsten:
 | `APP_SECRET` | Schlüssel für die Token-Verschlüsselung. Leer lassen, dann wird er erzeugt und im Datenverzeichnis gespeichert |
 | `ANTHROPIC_API_KEY` | Aktiviert den KI-Coach (Modell `claude-opus-5`, änderbar über `COACH_MODEL`) |
 | `GARMIN_*`, `WAHOO_*` | Zugangsdaten und Webhook-Tokens der Hersteller (für intervals.icu braucht die Installation nichts, jeder Nutzer trägt seinen eigenen Schlüssel ein) |
+| `SIGNUP_MODE` | `open` (Standard), `first` (nur das erste Konto) oder `closed` |
+| `DEMO_ENABLED` | Demo-Konten mit Beispieldaten (Standard `true`) |
 | `SYNC_INTERVAL_MINUTES` | Intervall des Hintergrund-Syncs (Standard 30, `0` = aus) |
 | `CRON_SECRET` | Schützt `GET /api/cron/sync` für externe Scheduler |
 

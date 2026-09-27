@@ -16,6 +16,7 @@ import { todayFor } from "@/lib/server/sync";
 import { summarize } from "@/lib/workout/metrics";
 import { TEMPLATES } from "@/lib/workout/templates";
 import { parseWorkoutText } from "@/lib/workout/text";
+import { demoEnabled, registrationOpen } from "@/lib/server/access";
 
 export type AuthState = { error?: string; fieldErrors?: Record<string, string> } | undefined;
 
@@ -47,6 +48,7 @@ export async function signup(_: AuthState, form: FormData): Promise<AuthState> {
     for (const issue of parsed.error.issues) fieldErrors[String(issue.path[0])] ??= issue.message;
     return { fieldErrors };
   }
+  if (!registrationOpen()) return { error: "Die Registrierung ist auf diesem Server geschlossen." };
   const db = getDb();
   if (db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email)).get()) {
     return { fieldErrors: { email: "Für diese E-Mail gibt es bereits ein Konto." } };
@@ -82,6 +84,7 @@ export async function logout() {
 
 /** Creates a fully populated demo account and signs in. */
 export async function startDemo(form: FormData) {
+  if (!demoEnabled()) redirect("/login");
   const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
   if (!rateLimit(`demo:${ip}`, 20, 60 * 60_000).ok) redirect("/login");
   const db = getDb();

@@ -1,0 +1,22 @@
+# Reverse Proxy mit automatischem HTTPS (Let's Encrypt).
+# DOMAIN und ACME_EMAIL kommen aus .env.production.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# FIT/ZIP-Import erlaubt bis zu 60 MB.
+	request_body {
+		max_size 70MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Setzt X-Forwarded-Proto/-For/-Host; Wrkhive setzt Session-Cookies dann als Secure.
+	reverse_proxy wrkhive:3000
+}

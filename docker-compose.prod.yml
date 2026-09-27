@@ -1,0 +1,68 @@
+# Produktivbetrieb auf einem eigenen Server (z. B. Hetzner) mit automatischem
+# HTTPS über Caddy (Let's Encrypt). Anleitung: deploy/README.md
+#
+#   ./deploy/deploy.sh
+#
+# bzw. von Hand:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+
+name: wrkhive-prod
+
+services:
+  wrkhive:
+    build:
+      context: .
+      args:
+        NODE_BUILD_IMAGE: ${NODE_BUILD_IMAGE:-node:22-bookworm}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+    image: wrkhive:prod
+    container_name: wrkhive-app
+    # Kein veröffentlichter Port: nur Caddy ist von außen erreichbar.
+    expose:
+      - "3000"
+    env_file:
+      - path: .env.production
+        required: true
+    environment:
+      APP_URL: https://${DOMAIN:?DOMAIN in .env.production setzen}
+      DATABASE_PATH: /data/wrkhive.db
+      # Persönlicher Server: nur das erste Konto darf sich registrieren, keine Demo.
+      SIGNUP_MODE: ${SIGNUP_MODE:-first}
+      DEMO_ENABLED: ${DEMO_ENABLED:-false}
+    volumes:
+      - wrkhive-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    container_name: wrkhive-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN in .env.production setzen}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL in .env.production setzen}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      wrkhive:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  wrkhive-data:
+  caddy-data:
+  caddy-config:

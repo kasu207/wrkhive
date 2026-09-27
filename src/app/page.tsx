@@ -1,6 +1,7 @@
 import { ArrowRight, BarChart3, CalendarDays, Check, MessageSquare, Send, Type } from "lucide-react";
 import Link from "next/link";
 import { DemoButton } from "@/components/auth-forms";
+import { demoEnabled, registrationOpen } from "@/lib/server/access";
 import { Logo, SportTile } from "@/components/brand";
 import { ButtonLink } from "@/components/ui/button";
 import { WorkoutChart } from "@/components/workout/workout-chart";
@@ -13,6 +14,11 @@ const HERO_TEXT = "Aufwärmen 12min 50-70%\n3x (1min 105%, Erholung 1min 50%)\n4
 
 export default async function Home() {
   const user = await getCurrentUser();
+  // On a personal server registration can be closed (SIGNUP_MODE) and the demo switched off (DEMO_ENABLED).
+  const canSignup = registrationOpen();
+  const demo = demoEnabled();
+  const startHref = canSignup ? "/signup" : "/login";
+  const startLabel = canSignup ? "Kostenlos starten" : "Anmelden";
   const hero = parseWorkoutText(HERO_TEXT, "ride", DEFAULT_THRESHOLDS).structure;
   const heroSummary = summarize(hero, DEFAULT_THRESHOLDS);
 
@@ -32,9 +38,11 @@ export default async function Home() {
                 <ButtonLink href="/login" variant="ghost" size="sm">
                   Anmelden
                 </ButtonLink>
-                <ButtonLink href="/signup" size="sm">
-                  Kostenlos starten
-                </ButtonLink>
+                {canSignup ? (
+                  <ButtonLink href="/signup" size="sm">
+                    Kostenlos starten
+                  </ButtonLink>
+                ) : null}
               </>
             )}
           </nav>
@@ -65,11 +73,11 @@ export default async function Home() {
               </ButtonLink>
             ) : (
               <>
-                <ButtonLink href="/signup" size="lg">
-                  Kostenlos starten
+                <ButtonLink href={startHref} size="lg">
+                  {startLabel}
                   <ArrowRight />
                 </ButtonLink>
-                <DemoButton />
+                {demo ? <DemoButton /> : null}
               </>
             )}
           </div>
@@ -175,11 +183,11 @@ export default async function Home() {
       <section className="mx-auto max-w-[1160px] px-5 py-20 text-center sm:px-8">
         <h2 className="text-[30px] font-semibold tracking-[-0.03em] sm:text-[36px]">Dein nächstes Training ist 30 Sekunden entfernt.</h2>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <ButtonLink href={user ? "/workouts/new" : "/signup"} size="lg">
-            {user ? "Neues Workout" : "Kostenlos starten"}
+          <ButtonLink href={user ? "/workouts/new" : startHref} size="lg">
+            {user ? "Neues Workout" : startLabel}
             <ArrowRight />
           </ButtonLink>
-          {!user ? <DemoButton /> : null}
+          {!user && demo ? <DemoButton /> : null}
         </div>
       </section>
 

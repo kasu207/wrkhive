@@ -51,6 +51,11 @@ export function SignupForm() {
       <Field label="Passwort" htmlFor="password" error={state?.fieldErrors?.password} hint="Mindestens 8 Zeichen">
         <Input id="password" name="password" type="password" autoComplete="new-password" required minLength={8} aria-invalid={!!state?.fieldErrors?.password} />
       </Field>
+      {state?.error ? (
+        <p className="rounded-lg bg-critical-soft px-3 py-2 text-[13px] text-critical-ink" role="alert">
+          {state.error}
+        </p>
+      ) : null}
       <Button type="submit" size="lg" className="w-full" loading={pending}>
         Konto erstellen
       </Button>

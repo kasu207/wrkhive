@@ -120,6 +120,51 @@ check("app → wahoo: Rollentrainer-Workout (ERG) gesendet", (await sendTo("Swee
 check("app → intervals.icu: Rad-Workout gesendet", (await sendTo("VO2max 5x4", "intervals.icu")) === "An intervals.icu gesendet");
 check("app → intervals.icu: Lauf-Workout gesendet", (await sendTo("Intervalle 6x800 m", "intervals.icu")) === "An intervals.icu gesendet");
 
+// 5b. Moving a sent workout: in Wrkhive (copies move along) and in intervals.icu (Wrkhive follows)
+const berlinDay = (offset) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date(Date.now() + offset * 86400e3));
+await page.goto(`${APP}/workouts`);
+await page.getByRole("radio", { name: "Vorlagen" }).click();
+await page.locator("div", { hasText: "Tempo 3x15" }).filter({ has: page.getByRole("button", { name: "Verwenden" }) }).last().getByRole("button", { name: "Verwenden" }).click();
+await page.waitForURL(/\/workouts\/[a-z0-9]{12}$/);
+await page.getByRole("button", { name: /An Gerät senden/ }).click();
+for (const label of ["intervals.icu", "Wahoo"]) {
+  const dlg = page.getByRole("dialog");
+  await dlg.getByRole("button", { name: new RegExp(`^${label.replace(".", "\\.")}`) }).click();
+  await dlg.getByRole("button", { name: "Morgen" }).click();
+  await dlg.getByRole("radio", { name: "Rollentrainer (ERG)" }).click();
+  await dlg.getByRole("button", { name: /^(Senden|Erneut senden)$/ }).click();
+  await page.getByText(`An ${label} gesendet`).first().waitFor({ timeout: 30_000 });
+}
+await page.goto(`${APP}/calendar`);
+check("Gesendetes Workout steht im Wrkhive-Kalender", (await page.getByText("Tempo 3x15").count()) === 1);
+await page.getByText("Tempo 3x15").first().click();
+await page.getByRole("dialog").getByLabel("Datum").fill(berlinDay(3));
+await page.getByRole("dialog").getByRole("button", { name: "Verschieben" }).click();
+const moveToast = await page.getByText(/Auch bei .* verschoben|Nicht verschoben/).first().textContent({ timeout: 30_000 });
+let state = await (await fetch(`${MOCK}/_test/state`)).json();
+const icuEvent = state.intervalsEvents.find((e) => e.name === "Tempo 3x15");
+const wahooPlanned = state.wahooWorkouts.find((w) => w.name === "Tempo 3x15");
+check(
+  "In Wrkhive verschoben: intervals.icu und Wahoo ziehen mit",
+  /intervals\.icu/.test(moveToast) && /Wahoo/.test(moveToast) && icuEvent?.start_date_local.startsWith(berlinDay(3)) && wahooPlanned?.starts.startsWith(berlinDay(3)),
+  moveToast,
+);
+await fetch(`${MOCK}/_test/intervals/move?id=${icuEvent.id}&date=${berlinDay(5)}`);
+await page.goto(`${APP}/devices`);
+const icuCard2 = page.locator("h2", { hasText: "intervals.icu" }).locator("xpath=ancestor::div[contains(@class,'flex-col')][1]");
+await icuCard2.getByRole("button", { name: /Jetzt synchronisieren/ }).click();
+await page.getByText(/^(Synchronisiert|Fehler)$/).first().waitFor({ timeout: 30_000 });
+await page.goto(`${APP}/calendar`);
+await page.getByText("Tempo 3x15").first().click();
+const movedTo = await page.getByRole("dialog").getByLabel("Datum").inputValue();
+state = await (await fetch(`${MOCK}/_test/state`)).json();
+check(
+  "In intervals.icu verschoben: Wrkhive und Wahoo ziehen mit",
+  movedTo === berlinDay(5) && state.wahooWorkouts.find((w) => w.name === "Tempo 3x15")?.starts.startsWith(berlinDay(5)),
+  `Wrkhive ${movedTo}`,
+);
+await page.keyboard.press("Escape");
+
 // 6. Wahoo webhook (new ride finished on the ELEMNT)
 const hook = await fetch(`${APP}/api/webhooks/wahoo`, {
   method: "POST",
@@ -158,7 +203,7 @@ check("wahoo: manueller Sync inkl. Token-Refresh", toast === "Synchronisiert");
 const report = await (await fetch(`${MOCK}/report`)).json();
 check("Anbieter-Mock: alle Anfragen formal korrekt", report.problems.length === 0, report.problems.join(" | "));
 check("wahoo: Rollentrainer-Workout als BIKING_INDOOR_TRAINER geplant", report.wahooIndoorWorkouts >= 1, `${report.wahooIndoorWorkouts}`);
-check("intervals.icu: Workouts im Kalender angelegt", report.intervalsEvents === 2, `${report.intervalsEvents}`);
+check("intervals.icu: Workouts im Kalender angelegt", report.intervalsEvents === 3, `${report.intervalsEvents}`);
 check("Browser ohne Laufzeitfehler", errors.length === 0, errors.join(" | "));
 
 await browser.close();

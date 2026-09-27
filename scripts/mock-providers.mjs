@@ -192,6 +192,17 @@ async function wahoo(req, res, url, path) {
     log({ provider: "wahoo", type: "create-plan", id, name: plan.header?.name });
     return send(res, 201, { id, name: plan.header?.name });
   }
+  if (/^\/v1\/workouts\/\d+$/.test(path) && req.method === "PUT") {
+    const id = Number(path.split("/")[3]);
+    const w = wahooWorkouts.find((x) => x.id === id);
+    if (!w) return send(res, 404, { error: "not found" });
+    if (!(req.headers["content-type"] ?? "").includes("application/x-www-form-urlencoded")) problem("wahoo workout update: must be form-encoded");
+    const starts = new URLSearchParams(await readBody(req)).get("workout[starts]");
+    if (!starts || Number.isNaN(Date.parse(starts))) problem("wahoo workout update: workout[starts] missing or not ISO");
+    else w.starts = starts;
+    log({ provider: "wahoo", type: "update-workout", id, starts });
+    return send(res, 200, { ...w });
+  }
   if (path === "/v1/workouts" && req.method === "POST") {
     const p = new URLSearchParams(await readBody(req));
     const w = Object.fromEntries([...p.entries()].map(([k, v]) => [k.replace(/^workout\[(.+)\]$/, "$1"), v]));
@@ -344,6 +355,17 @@ async function garmin(req, res, url, path) {
     log({ provider: "garmin", type: "create-workout", workoutId, name: w.workoutName, sport: w.sport });
     return send(res, 200, { workoutId, ownerId: 1, ...w });
   }
+  if (/^\/training-api\/schedule\/\d+$/.test(path) && req.method === "PUT") {
+    const id = Number(path.split("/")[3]);
+    const s = garminSchedules.find((x) => x.id === id);
+    const b = JSON.parse(await readBody(req));
+    if (!s) return send(res, 404, { error: "not found" });
+    if (b.scheduleId !== id) problem("garmin schedule update: scheduleId must match the path");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date ?? "")) problem("garmin schedule update: date must be YYYY-MM-DD");
+    s.date = b.date;
+    log({ provider: "garmin", type: "update-schedule", id, date: b.date });
+    return send(res, 204, "");
+  }
   if (path === "/training-api/schedule/" && req.method === "POST") {
     const b = JSON.parse(await readBody(req));
     if (!garminWorkouts.has(b.workoutId)) problem("garmin schedule: unknown workoutId");
@@ -434,6 +456,27 @@ async function intervals(req, res, url, path) {
 
   if (req.method === "DELETE" && /^\/events\/\d+$/.test(sub)) return send(res, 200, {});
 
+  if (req.method === "PUT" && /^\/events\/\d+$/.test(sub)) {
+    const id = Number(sub.split("/")[2]);
+    const ev = intervalsEvents.find((e) => e.id === id);
+    if (!ev) return send(res, 404, { error: "not found" });
+    const b = JSON.parse(await readBody(req));
+    if (!/^\d{4}-\d{2}-\d{2}T00:00:00$/.test(b.start_date_local ?? "")) problem("intervals event update: start_date_local must be YYYY-MM-DDT00:00:00");
+    if (b.category !== "WORKOUT") problem("intervals event update: category must stay WORKOUT");
+    if (typeof b.description === "string") parseIntervalsText(b.description);
+    Object.assign(ev, b);
+    log({ provider: "intervals", type: "update-event", id, date: b.start_date_local });
+    return send(res, 200, { ...ev, workout_doc: { steps: [{}] } });
+  }
+
+  if (req.method === "GET" && sub === "/events") {
+    const oldest = url.searchParams.get("oldest") ?? "";
+    const newest = url.searchParams.get("newest") ?? "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(oldest) || !/^\d{4}-\d{2}-\d{2}$/.test(newest)) problem("intervals events: oldest/newest must be YYYY-MM-DD");
+    const list = intervalsEvents.filter((e) => !e.deleted && e.start_date_local.slice(0, 10) >= oldest && e.start_date_local.slice(0, 10) <= newest);
+    return send(res, 200, list.map(({ id, category, start_date_local, name, type }) => ({ id, category, start_date_local, name, type })));
+  }
+
   if (req.method === "GET" && sub === "/activities") {
     const oldest = url.searchParams.get("oldest");
     const newest = url.searchParams.get("newest");
@@ -473,6 +516,23 @@ http
       if (url.pathname.startsWith("/wahoo")) return await wahoo(req, res, url, url.pathname.slice("/wahoo".length));
       if (url.pathname.startsWith("/intervals")) return await intervals(req, res, url, url.pathname.slice("/intervals".length));
       if (url.pathname.startsWith("/garmin")) return await garmin(req, res, url, url.pathname.slice("/garmin".length));
+      // Test helpers: simulate the athlete moving or deleting a workout directly at the provider.
+      if (url.pathname === "/_test/intervals/move") {
+        const ev = intervalsEvents.find((e) => e.id === Number(url.searchParams.get("id")));
+        if (ev) ev.start_date_local = `${url.searchParams.get("date")}T00:00:00`;
+        return send(res, ev ? 200 : 404, { ok: !!ev });
+      }
+      if (url.pathname === "/_test/intervals/delete") {
+        const ev = intervalsEvents.find((e) => e.id === Number(url.searchParams.get("id")));
+        if (ev) ev.deleted = true;
+        return send(res, ev ? 200 : 404, { ok: !!ev });
+      }
+      if (url.pathname === "/_test/wahoo/move") {
+        const w = wahooWorkouts.find((x) => x.id === Number(url.searchParams.get("id")));
+        if (w) w.starts = `${url.searchParams.get("date")}T10:00:00.000Z`;
+        return send(res, w ? 200 : 404, { ok: !!w });
+      }
+      if (url.pathname === "/_test/state") return send(res, 200, { intervalsEvents, wahooWorkouts, garminSchedules });
       if (url.pathname === "/report") return send(res, 200, { problems, events: events.length, intervalsEvents: intervalsEvents.length, wahooIndoorWorkouts: wahooWorkouts.filter((w) => w.workout_type_id === 61).length });
       send(res, 404, { error: "not found" });
     } catch (e) {

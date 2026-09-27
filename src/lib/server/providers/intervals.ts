@@ -215,6 +215,27 @@ export const intervalsAdapter: ProviderAdapter = {
     };
   },
 
+  async reschedule(token, input) {
+    const { athleteId, apiKey } = unpackIntervalsToken(token);
+    const eventId = input.externalIds.event;
+    if (eventId === undefined) throw new ProviderError("intervals.icu: Kalendereintrag unbekannt, bitte erneut senden.");
+    if (input.workout.structure.sport === "strength") throw new ProviderError("Krafttraining wird über intervals.icu nicht unterstützt.");
+    // Full payload: the same event, only on another day.
+    await providerFetch("intervals.icu", `${API}/athlete/${athleteId}/events/${eventId}`, {
+      method: "PUT",
+      headers: headers(apiKey, true),
+      body: JSON.stringify({
+        category: "WORKOUT",
+        start_date_local: `${input.date}T00:00:00`,
+        type: INTERVALS_SPORT_TYPE[input.workout.structure.sport],
+        name: input.workout.name.slice(0, 120),
+        description: encodeIntervalsWorkout(input.workout.structure),
+        moving_time: intervalsMovingTime(input.workout.structure, input.user),
+      }),
+    });
+    return input.externalIds;
+  },
+
   async sync(token, _connection, since) {
     const { athleteId, apiKey } = unpackIntervalsToken(token);
     const newest = new Date(Date.now() + 86_400_000);
@@ -222,7 +243,16 @@ export const intervalsAdapter: ProviderAdapter = {
     const res = await providerFetch("intervals.icu", `${API}/athlete/${athleteId}/activities?${q}`, { headers: headers(apiKey), timeoutMs: 60_000 });
     const rows = (await res.json()) as IntervalsActivity[];
     const activities = (Array.isArray(rows) ? rows : []).map(normalizeIntervalsActivity).filter((a): a is NormalizedActivity => a !== null);
-    return { activities };
+
+    // Planned workouts in the calendar, to pick up moves and deletions made in intervals.icu.
+    const from = ymd(new Date(Date.now() - 14 * 86_400_000));
+    const to = ymd(new Date(Date.now() + 60 * 86_400_000));
+    const ev = await providerFetch("intervals.icu", `${API}/athlete/${athleteId}/events?${new URLSearchParams({ oldest: from, newest: to, category: "WORKOUT" })}`, { headers: headers(apiKey) });
+    const events = (await ev.json()) as { id?: number | string; start_date_local?: string; category?: string }[];
+    const items = (Array.isArray(events) ? events : [])
+      .filter((e) => e.id !== undefined && typeof e.start_date_local === "string" && (!e.category || e.category === "WORKOUT"))
+      .map((e) => ({ id: String(e.id), date: e.start_date_local!.slice(0, 10) }));
+    return { activities, planned: { key: "event", items, complete: { from, to } } };
   },
 
   // Personal API keys are revoked by the athlete in intervals.icu itself.

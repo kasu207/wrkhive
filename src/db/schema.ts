@@ -166,7 +166,8 @@ export const deliveries = sqliteTable(
       .references(() => workouts.id, { onDelete: "cascade" }),
     connectionId: text("connection_id").references(() => deviceConnections.id, { onDelete: "set null" }),
     provider: text("provider", { enum: ["garmin", "wahoo", "intervals"] }).notNull(),
-    status: text("status", { enum: ["sent", "failed"] }).notNull(),
+    /** "removed": the workout was deleted at the provider after sending. */
+    status: text("status", { enum: ["sent", "failed", "removed"] }).notNull(),
     scheduledDate: text("scheduled_date"),
     externalIds: text("external_ids", { mode: "json" }).$type<Record<string, string | number>>(),
     error: text("error"),

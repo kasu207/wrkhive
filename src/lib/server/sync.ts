@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, lte, ne } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { activities, deliveries, deviceConnections, scheduledWorkouts, users, workouts, type DeviceConnection, type User } from "@/db/schema";
 import { activityLoad, effectiveVo2max } from "@/lib/analytics/load";
@@ -10,7 +10,7 @@ import { detectSourceApp, isTrainingApp, type SourceAppId } from "@/lib/apps";
 import { generateDemoActivities } from "./providers/demo";
 import { garminAdapter } from "./providers/garmin";
 import { intervalsAdapter } from "./providers/intervals";
-import { ProviderError, type NormalizedActivity, type ProviderAdapter, type ProviderId } from "./providers/types";
+import { ProviderError, type NormalizedActivity, type PlannedOnProvider, type ProviderAdapter, type ProviderId } from "./providers/types";
 import { wahooAdapter } from "./providers/wahoo";
 
 export const PROVIDERS: Record<ProviderId, ProviderAdapter> = { garmin: garminAdapter, wahoo: wahooAdapter, intervals: intervalsAdapter };
@@ -291,6 +291,11 @@ async function runSync(conn: DeviceConnection, opts: { full?: boolean }): Promis
     const since = opts.full || !conn.lastSyncAt ? new Date(now.getTime() - HISTORY_DAYS * 86_400_000) : new Date(conn.lastSyncAt.getTime() - 2 * 86_400_000);
     const result = await adapter.sync(token, conn, since);
     const r = upsertActivities(user, conn, result.activities);
+    if (result.planned) {
+      const applied = applyProviderMoves(user, conn, result.planned);
+      // Keep the other copies (e.g. a direct Wahoo delivery) on the same day as the moved one.
+      for (const m of applied.moves) await rescheduleDeliveries(user, [m.workoutId], m.from, m.to);
+    }
     db.update(deviceConnections).set({ lastSyncAt: now, status: "connected", statusMessage: null }).where(eq(deviceConnections.id, conn.id)).run();
     const message = result.message ?? (r.inserted ? `${r.inserted} neue Aktivitäten importiert.` : "Alles aktuell.");
     return { ok: true, inserted: r.inserted, message };
@@ -339,6 +344,7 @@ export async function sendWorkoutToDevice(
 
   if (conn.mode === "demo") {
     record("sent", { demo: newId(8) }, null);
+    if (date) ensureScheduled(user.id, workoutId, date);
     return {
       ok: true,
       message: date
@@ -360,6 +366,7 @@ export async function sendWorkoutToDevice(
       indoor: Boolean(opts.indoor),
     });
     record("sent", res.externalIds, null);
+    if (date) ensureScheduled(user.id, workoutId, date);
     return { ok: true, message: res.message };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Senden fehlgeschlagen";
@@ -378,4 +385,118 @@ export function staleConnections(userId: string, maxAgeMs: number): DeviceConnec
     .where(eq(deviceConnections.userId, userId))
     .all()
     .filter((c) => c.autoSync && c.status !== "revoked" && (!c.lastSyncAt || now - c.lastSyncAt.getTime() > maxAgeMs));
+}
+
+export interface RescheduleOutcome {
+  /** Providers where the workout was moved as well. */
+  moved: string[];
+  /** Providers where it could not be moved (the athlete should re-send). */
+  failed: { provider: string; error: string }[];
+}
+
+/**
+ * Moves already sent copies of a scheduled workout along with it: the
+ * intervals.icu calendar event, the Wahoo scheduled workout and the Garmin
+ * calendar entry get the new day. Deliveries without an API route to move
+ * are reported so the athlete can re-send.
+ */
+export async function rescheduleDeliveries(user: User, workoutIds: string[], from: ISODate, to: ISODate): Promise<RescheduleOutcome> {
+  const out: RescheduleOutcome = { moved: [], failed: [] };
+  if (from === to || !workoutIds.length) return out;
+  const db = getDb();
+  const rows = db
+    .select({ d: deliveries, w: workouts })
+    .from(deliveries)
+    .innerJoin(workouts, eq(workouts.id, deliveries.workoutId))
+    .where(and(eq(deliveries.userId, user.id), inArray(deliveries.workoutId, workoutIds), eq(deliveries.status, "sent"), eq(deliveries.scheduledDate, from)))
+    .all();
+  for (const { d, w } of rows) {
+    const adapter = PROVIDERS[d.provider];
+    const conn = d.connectionId ? db.select().from(deviceConnections).where(eq(deviceConnections.id, d.connectionId)).get() : undefined;
+    try {
+      if (!conn) throw new ProviderError(`${adapter.name} ist nicht mehr verbunden.`);
+      let ids = d.externalIds ?? {};
+      if (conn.mode === "live") {
+        if (!adapter.reschedule) throw new ProviderError(`${adapter.name} kann gesendete Workouts nicht verschieben.`);
+        const token = await accessTokenFor(conn);
+        ids = await adapter.reschedule(token, { date: to, timeZone: user.timeZone, user, workout: { name: w.name, description: w.description, structure: w.structure }, externalIds: ids });
+      }
+      db.update(deliveries).set({ scheduledDate: to, externalIds: ids }).where(eq(deliveries.id, d.id)).run();
+      if (!out.moved.includes(adapter.name)) out.moved.push(adapter.name);
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      if (e instanceof ProviderError && e.authExpired && conn) markError(conn.id, e);
+      out.failed.push({ provider: adapter.name, error });
+    }
+  }
+  return out;
+}
+
+/**
+ * Picks up changes made at the provider to workouts Wrkhive sent: a workout
+ * moved in intervals.icu or the Wahoo app moves in the Wrkhive calendar too;
+ * one deleted there is marked as removed (the Wrkhive plan stays).
+ */
+export function applyProviderMoves(
+  user: User,
+  conn: Pick<DeviceConnection, "provider">,
+  planned: PlannedOnProvider,
+): { moved: number; removed: number; moves: { workoutId: string; from: ISODate; to: ISODate }[] } {
+  const db = getDb();
+  const byId = new Map(planned.items.map((i) => [i.id, /^\d{4}-\d{2}-\d{2}$/.test(i.date) ? i.date : localDate(new Date(i.date), user.timeZone)]));
+  const sent = db
+    .select()
+    .from(deliveries)
+    .where(and(eq(deliveries.userId, user.id), eq(deliveries.provider, conn.provider), eq(deliveries.status, "sent")))
+    .all()
+    .filter((d) => d.scheduledDate && d.externalIds && d.externalIds[planned.key] !== undefined);
+  let moved = 0;
+  let removed = 0;
+  const moves: { workoutId: string; from: ISODate; to: ISODate }[] = [];
+  db.transaction((tx) => {
+    for (const d of sent) {
+      const id = String(d.externalIds![planned.key]);
+      const date = byId.get(id);
+      const old = d.scheduledDate!;
+      if (date === undefined) {
+        if (planned.complete && old >= planned.complete.from && old <= planned.complete.to) {
+          tx.update(deliveries).set({ status: "removed" }).where(eq(deliveries.id, d.id)).run();
+          removed++;
+        }
+        continue;
+      }
+      if (date === old) continue;
+      tx.update(deliveries).set({ scheduledDate: date }).where(eq(deliveries.id, d.id)).run();
+      moves.push({ workoutId: d.workoutId, from: old, to: date });
+      // Move the matching open calendar entry (also when it holds an adapted copy of the sent workout).
+      const entry = tx
+        .select()
+        .from(scheduledWorkouts)
+        .where(
+          and(
+            eq(scheduledWorkouts.userId, user.id),
+            eq(scheduledWorkouts.date, old),
+            eq(scheduledWorkouts.status, "planned"),
+            or(eq(scheduledWorkouts.workoutId, d.workoutId), eq(scheduledWorkouts.originalWorkoutId, d.workoutId)),
+          ),
+        )
+        .get();
+      if (entry) {
+        tx.update(scheduledWorkouts).set({ date }).where(eq(scheduledWorkouts.id, entry.id)).run();
+        moved++;
+      }
+    }
+  });
+  return { moved, removed, moves };
+}
+
+/** A workout sent for a day also belongs in the Wrkhive calendar (once), so it can be moved, adapted and checked off. */
+export function ensureScheduled(userId: string, workoutId: string, date: ISODate) {
+  const db = getDb();
+  const existing = db
+    .select({ id: scheduledWorkouts.id })
+    .from(scheduledWorkouts)
+    .where(and(eq(scheduledWorkouts.userId, userId), eq(scheduledWorkouts.date, date), or(eq(scheduledWorkouts.workoutId, workoutId), eq(scheduledWorkouts.originalWorkoutId, workoutId))))
+    .get();
+  if (!existing) db.insert(scheduledWorkouts).values({ id: newId(), userId, workoutId, date }).run();
 }

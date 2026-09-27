@@ -62,8 +62,29 @@ export interface SendResult {
   message: string;
 }
 
+export interface RescheduleInput {
+  /** New calendar day (YYYY-MM-DD). */
+  date: string;
+  timeZone: string;
+  user: User;
+  workout: { name: string; description: string; structure: WorkoutStructure };
+  /** IDs returned by send() for this delivery. */
+  externalIds: Record<string, string | number>;
+}
+
+/** Planned workouts as the provider currently has them (to pick up moves made there). */
+export interface PlannedOnProvider {
+  /** Key in the delivery's externalIds that identifies the item (e.g. "event", "workout"). */
+  key: string;
+  /** date: YYYY-MM-DD, or an ISO instant that is converted with the athlete's time zone. */
+  items: { id: string; date: string }[];
+  /** When set, the list is complete for this date range: sent items missing from it were deleted there. */
+  complete?: { from: string; to: string };
+}
+
 export interface SyncResult {
   activities: NormalizedActivity[];
+  planned?: PlannedOnProvider;
   /** True when the provider delivers data asynchronously (webhooks/backfill). */
   asyncRequested?: boolean;
   message?: string;
@@ -85,6 +106,8 @@ export interface ProviderAdapter {
   /** Returns reasons why the workout cannot be sent, or [] if it can. */
   compatibility(structure: WorkoutStructure, date: string | null): string[];
   send(accessToken: string, input: SendInput): Promise<SendResult>;
+  /** Moves an already sent workout to another day; returns the (possibly updated) external IDs. */
+  reschedule?(accessToken: string, input: RescheduleInput): Promise<Record<string, string | number>>;
   sync(accessToken: string, connection: DeviceConnection, since: Date): Promise<SyncResult>;
   revoke(accessToken: string): Promise<void>;
   /** API-key providers: validates the key and returns the account plus the token to store. */

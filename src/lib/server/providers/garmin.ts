@@ -190,6 +190,26 @@ export const garminAdapter: ProviderAdapter = {
     };
   },
 
+  async reschedule(accessToken, input) {
+    const workoutId = input.externalIds.workout;
+    if (workoutId === undefined) throw new ProviderError("Garmin: Workout unbekannt, bitte erneut senden.");
+    const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+    const scheduleId = input.externalIds.schedule;
+    if (scheduleId !== undefined) {
+      await providerFetch("Garmin", `${API}/training-api/schedule/${scheduleId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ scheduleId: Number(scheduleId), workoutId: Number(workoutId), date: input.date }),
+      });
+      return input.externalIds;
+    }
+    // Sent to the library only so far: add a calendar entry.
+    const res = await providerFetch("Garmin", `${API}/training-api/schedule/`, { method: "POST", headers, body: JSON.stringify({ workoutId: Number(workoutId), date: input.date }) });
+    const text = await res.text();
+    const id = Number(text.trim()) || (JSON.parse(text || "{}") as { scheduleId?: number }).scheduleId;
+    return id ? { ...input.externalIds, schedule: id } : input.externalIds;
+  },
+
   async sync(accessToken, _connection, since) {
     // Garmin delivers history asynchronously to the activity webhook.
     const end = new Date();

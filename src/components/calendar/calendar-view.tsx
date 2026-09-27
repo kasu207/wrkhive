@@ -105,11 +105,11 @@ export function CalendarView({
     return m;
   }, [acts]);
 
-  const act = (fn: () => Promise<{ ok: boolean; error?: string } | { ok: true }>, success?: string) =>
+  const act = (fn: () => Promise<{ ok: boolean; error?: string; message?: string } | { ok: true }>, success?: string) =>
     start_(async () => {
-      const r = (await fn()) as { ok: boolean; error?: string };
+      const r = (await fn()) as { ok: boolean; error?: string; message?: string };
       if (!r.ok) toast({ tone: "error", title: "Das hat nicht geklappt", description: r.error });
-      else if (success) toast({ tone: "success", title: success });
+      else if (success || r.message) toast({ tone: "success", title: success ?? "Erledigt", description: r.message });
       router.refresh();
     });
 
@@ -120,7 +120,7 @@ export function CalendarView({
     setDragId(null);
     if (!it || (optimistic[it.scheduledId] ?? it.date) === day) return;
     setOptimistic((o) => ({ ...o, [it.scheduledId]: day }));
-    act(() => moveScheduled(it.scheduledId, day));
+    act(() => moveScheduled(it.scheduledId, day), "Verschoben");
   };
 
   const activePlan = plans.find((p) => p.startDate <= addDays(start, weeks * 7 - 1) && p.endDate >= start);
@@ -357,6 +357,28 @@ export function CalendarView({
               {detail.adapted ? <Badge tone="info">An Belastung angepasst</Badge> : null}
             </div>
             <WorkoutChart structure={detail.workout.structure} thresholds={thresholds} height={170} />
+            {detail.status === "planned" ? (
+              <form
+                className="mt-4 flex flex-wrap items-end gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const value = new FormData(e.currentTarget).get("date");
+                  if (typeof value !== "string" || !value || value === detail.date) return;
+                  setOptimistic((o) => ({ ...o, [detail.scheduledId]: value }));
+                  act(() => moveScheduled(detail.scheduledId, value), "Verschoben");
+                  setDetail(null);
+                }}
+              >
+                <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink-2">
+                  Datum
+                  <Input type="date" name="date" defaultValue={detail.date} className="w-auto" required />
+                </label>
+                <Button type="submit" variant="secondary" size="sm" className="h-10">
+                  Verschieben
+                </Button>
+                <p className="w-full text-[12px] leading-relaxed text-ink-3">Bereits gesendete Kopien bei intervals.icu, Wahoo und Garmin werden mit verschoben.</p>
+              </form>
+            ) : null}
             {detail.workout.description ? <p className="mt-3 text-[14px] leading-relaxed text-ink-2">{detail.workout.description}</p> : null}
           </div>
         ) : null}

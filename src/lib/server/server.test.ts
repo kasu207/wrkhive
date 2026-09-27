@@ -33,7 +33,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 
 const { getDb } = await import("@/db");
 const schema = await import("@/db/schema");
-const { isSameSession, upsertActivities, syncConnection, todayFor } = await import("./sync");
+const { applyProviderMoves, ensureScheduled, isSameSession, upsertActivities, syncConnection, todayFor } = await import("./sync");
 const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
 const { pmcFor } = await import("./training");
@@ -221,6 +221,43 @@ describe("adaptation to load", () => {
     db().insert(schema.scheduledWorkouts).values({ id: "s-later", userId: user.id, workoutId: "w-vo2", date: "2099-01-01" }).run();
     const r = adaptScheduled(user, "s-later");
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("moves made at the provider", () => {
+  it("moves the calendar entry along, marks deleted ones and keeps sending idempotent", () => {
+    const db = getDb();
+    const user = makeUser("u-move");
+    db.insert(schema.deviceConnections).values({ id: "c-move", userId: user.id, provider: "intervals", mode: "live" }).run();
+    db.insert(schema.workouts).values([
+      { id: "w-a", userId: user.id, name: "A", sport: "ride", structure: { sport: "ride", nodes: [] } },
+      { id: "w-b", userId: user.id, name: "B", sport: "ride", structure: { sport: "ride", nodes: [] } },
+    ]).run();
+    ensureScheduled(user.id, "w-a", "2030-05-01");
+    ensureScheduled(user.id, "w-a", "2030-05-01");
+    ensureScheduled(user.id, "w-b", "2030-05-02");
+    const entries = () => db.select().from(schema.scheduledWorkouts).all().filter((x) => x.userId === user.id);
+    expect(entries()).toHaveLength(2);
+    db.insert(schema.deliveries).values([
+      { id: "d-a", userId: user.id, workoutId: "w-a", connectionId: "c-move", provider: "intervals", status: "sent", scheduledDate: "2030-05-01", externalIds: { event: 11 } },
+      { id: "d-b", userId: user.id, workoutId: "w-b", connectionId: "c-move", provider: "intervals", status: "sent", scheduledDate: "2030-05-02", externalIds: { event: 12 } },
+    ]).run();
+
+    // Event 11 moved to May 3 in intervals.icu, event 12 deleted there.
+    const r = applyProviderMoves(user, { provider: "intervals" }, { key: "event", items: [{ id: "11", date: "2030-05-03" }], complete: { from: "2030-04-20", to: "2030-06-30" } });
+    expect(r).toMatchObject({ moved: 1, removed: 1, moves: [{ workoutId: "w-a", from: "2030-05-01", to: "2030-05-03" }] });
+    expect(entries().find((x) => x.workoutId === "w-a")!.date).toBe("2030-05-03");
+    const del = db.select().from(schema.deliveries).all();
+    expect(del.find((d) => d.id === "d-a")).toMatchObject({ scheduledDate: "2030-05-03", status: "sent" });
+    expect(del.find((d) => d.id === "d-b")!.status).toBe("removed");
+    // The Wrkhive plan of the deleted one stays.
+    expect(entries().find((x) => x.workoutId === "w-b")!.date).toBe("2030-05-02");
+    // Running again changes nothing.
+    expect(applyProviderMoves(user, { provider: "intervals" }, { key: "event", items: [{ id: "11", date: "2030-05-03" }] })).toEqual({ moved: 0, removed: 0, moves: [] });
+    // Instants (Wahoo) are converted with the athlete's time zone: 23:30 UTC is already the next day in Berlin.
+    db.insert(schema.deliveries).values({ id: "d-w", userId: user.id, workoutId: "w-a", connectionId: "c-move", provider: "wahoo", status: "sent", scheduledDate: "2030-05-03", externalIds: { workout: 77 } }).run();
+    applyProviderMoves(user, { provider: "wahoo" }, { key: "workout", items: [{ id: "77", date: "2030-05-04T23:30:00Z" }] });
+    expect(entries().find((x) => x.workoutId === "w-a")!.date).toBe("2030-05-05");
   });
 });
 

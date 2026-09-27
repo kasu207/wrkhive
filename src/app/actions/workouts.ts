@@ -8,7 +8,7 @@ import { scheduledWorkouts, workouts } from "@/db/schema";
 import { isISODate } from "@/lib/dates";
 import { newId } from "@/lib/id";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
-import { sendWorkoutToDevice } from "@/lib/server/sync";
+import { rescheduleDeliveries, sendWorkoutToDevice } from "@/lib/server/sync";
 import { summarize } from "@/lib/workout/metrics";
 import { workoutStructureSchema } from "@/lib/workout/schema";
 import { TEMPLATES } from "@/lib/workout/templates";
@@ -109,15 +109,21 @@ export async function scheduleWorkout(workoutId: string, date: string): Promise<
 
 export async function moveScheduled(id: string, date: string): Promise<ActionResult> {
   const user = await requireUser();
-  if (!isISODate(date)) return { ok: false, error: "Ungültiges Datum." };
-  getDb()
-    .update(scheduledWorkouts)
-    .set({ date, status: "planned", activityId: null })
-    .where(and(eq(scheduledWorkouts.id, id), eq(scheduledWorkouts.userId, user.id)))
-    .run();
+  if (typeof id !== "string" || !isISODate(date)) return { ok: false, error: "Ungültiges Datum." };
+  const db = getDb();
+  const entry = db.select().from(scheduledWorkouts).where(and(eq(scheduledWorkouts.id, id), eq(scheduledWorkouts.userId, user.id))).get();
+  if (!entry) return { ok: false, error: "Geplantes Workout nicht gefunden." };
+  if (entry.date === date) return { ok: true };
+  db.update(scheduledWorkouts).set({ date, status: "planned", activityId: null }).where(eq(scheduledWorkouts.id, entry.id)).run();
+  // Copies already sent to devices move along (intervals.icu event, Wahoo, Garmin calendar).
+  const workoutIds = [entry.workoutId, ...(entry.originalWorkoutId ? [entry.originalWorkoutId] : [])];
+  const r = await rescheduleDeliveries(user, workoutIds, entry.date, date);
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
-  return { ok: true };
+  const parts: string[] = [];
+  if (r.moved.length) parts.push(`Auch bei ${r.moved.join(" und ")} verschoben.`);
+  if (r.failed.length) parts.push(`Nicht verschoben bei ${r.failed.map((f) => `${f.provider} (${f.error})`).join(", ")}. Sende das Workout dort erneut.`);
+  return { ok: true, message: parts.join(" ") || undefined };
 }
 
 export async function setScheduledStatus(id: string, status: "planned" | "done" | "skipped"): Promise<ActionResult> {
@@ -158,5 +164,7 @@ export async function sendToDevice(input: z.input<typeof sendInput>): Promise<Ac
   if (date !== null && !isISODate(date)) return { ok: false, error: "Ungültiges Datum." };
   const res = await sendWorkoutToDevice(user, workoutId, provider, date, timeZone || user.timeZone, { indoor });
   revalidatePath(`/workouts/${workoutId}`);
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
   return res.ok ? { ok: true, message: res.message } : { ok: false, error: res.message };
 }

@@ -67,6 +67,19 @@ Danach landen Workouts mit einem Klick auf dem ELEMNT (geplant für heute bis 6 
 
 Unterstützt werden Rad- und Lauf-Workouts mit Leistung (% FTP), Puls (% LTHR), Pace (% Schwellenpace) und Trittfrequenz. Jeder Wrkhive-Nutzer braucht sein eigenes intervals.icu-Konto.
 
+### Workouts verschieben
+
+Ein Workout, das mit Datum gesendet wird, steht automatisch auch im Wrkhive-Kalender.
+
+| Wo verschoben | Was passiert |
+| --- | --- |
+| **Wrkhive** (Kalender: ziehen oder im Workout-Dialog „Verschieben“) | Bereits gesendete Kopien ziehen mit: intervals.icu-Kalendereintrag, geplantes Wahoo-Workout, Garmin-Kalendereintrag (bei direkter Verbindung). Klappt das bei einem Anbieter nicht, sagt Wrkhive es und du sendest dort erneut. |
+| **intervals.icu** | Wrkhive übernimmt das neue Datum beim nächsten Abgleich (spätestens nach 30 Minuten) und verschiebt direkte Wahoo- oder Garmin-Kopien mit. Wird das Workout dort gelöscht, bleibt es in Wrkhive geplant und lässt sich neu senden. |
+| **Wahoo-App** (direkte Verbindung) | Wrkhive übernimmt das neue Datum beim nächsten Abgleich. |
+| **Garmin Connect** | Wird von keiner Schnittstelle zurückgemeldet, weder an Wrkhive noch an intervals.icu. |
+
+Deshalb am besten immer in Wrkhive verschieben. Wichtig beim Weg über intervals.icu: Laut intervals.icu-Forum überträgt intervals.icu eine Verschiebung nicht in einen bereits befüllten Garmin-Connect-Kalender. Dort kann das Workout zusätzlich am alten Tag stehen bleiben und ist in Garmin Connect von Hand zu löschen. Bei Wahoo werden die Workouts der nächsten 7 Tage von intervals.icu neu abgeglichen.
+
 ### Workouts an die Belastung anpassen
 
 Wrkhive bewertet täglich die Form im Verhältnis zur Fitness (TSB in Prozent der CTL) und die Steigerungsrate. Bei hoher Ermüdung (unter -30 %) werden harte Einheiten kürzer und 5 % leichter (weniger Wiederholungen oder kürzere Blöcke), bei sehr hoher Ermüdung (unter -40 %) durch eine lockere Einheit ersetzt; lockere Einheiten bleiben unverändert. Auf der Übersicht erscheint dazu ein Vorschlag mit einem Klick zum Übernehmen, das Original lässt sich jederzeit wiederherstellen. Im Automatikmodus (Onboarding oder Einstellungen) passiert das morgens von selbst, aber nie für Workouts, die schon an ein Gerät gesendet wurden.

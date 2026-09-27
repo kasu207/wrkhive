@@ -214,8 +214,21 @@ export const wahooAdapter: ProviderAdapter = {
     };
   },
 
+  async reschedule(accessToken, input) {
+    const workoutId = input.externalIds.workout;
+    if (workoutId === undefined) throw new ProviderError("Wahoo: geplantes Workout unbekannt, bitte erneut senden.");
+    await providerFetch("Wahoo", `${API}/v1/workouts/${workoutId}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ "workout[starts]": localNoonInstant(input.date, input.timeZone).toISOString() }),
+    });
+    return input.externalIds;
+  },
+
   async sync(accessToken, _connection, since) {
     const out: NormalizedActivity[] = [];
+    // Scheduled (not yet ridden) workouts, to pick up moves made in the Wahoo app.
+    const planned: { id: string; date: string }[] = [];
     // Newest first; stop once we are past `since`.
     for (let page = 1; page <= 20; page++) {
       const res = await providerFetch("Wahoo", `${API}/v1/workouts?page=${page}&per_page=50`, {
@@ -225,6 +238,7 @@ export const wahooAdapter: ProviderAdapter = {
       const rows = json.workouts ?? [];
       let reachedEnd = rows.length < 50;
       for (const w of rows) {
+        if (!w.workout_summary && w.starts) planned.push({ id: String(w.id), date: w.starts });
         if (new Date(w.starts) < since) {
           reachedEnd = true;
           continue;
@@ -234,7 +248,7 @@ export const wahooAdapter: ProviderAdapter = {
       }
       if (reachedEnd) break;
     }
-    return { activities: out };
+    return { activities: out, planned: { key: "workout", items: planned } };
   },
 
   async revoke(accessToken) {

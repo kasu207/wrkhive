@@ -3,11 +3,12 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { users, type User } from "@/db/schema";
-import { appleSport, appleWorkoutName, type AppleWorkout } from "@/lib/apple-health";
+import { appleSport, appleWorkoutName, type AppleDaily, type AppleWorkout } from "@/lib/apple-health";
 import { detectSourceApp } from "@/lib/apps";
 import { randomToken, sha256 } from "./crypto";
 import type { NormalizedActivity } from "./providers/types";
 import { upsertActivities } from "./sync";
+import { upsertWellness } from "./wellness";
 
 const optionalNumber = (max: number) => z.number().min(0).max(max).nullish();
 
@@ -32,6 +33,19 @@ export const appleWorkoutSchema = z.object({
   source: z.string().max(200).nullish(),
   id: z.string().max(100).nullish(),
 });
+
+/** Daily health values (wire format, validated; plausibility is checked again when stored). */
+export const appleDailySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  restingHr: optionalNumber(300),
+  hrvSdnn: optionalNumber(1000),
+  sleepSec: optionalNumber(86_400),
+  weightKg: optionalNumber(500),
+});
+
+export function importAppleDaily(user: Pick<User, "id">, list: AppleDaily[]): number {
+  return list.length ? upsertWellness(user.id, list, "apple") : 0;
+}
 
 /** Shorter recordings are accidental starts. */
 const MIN_DURATION_SEC = 60;

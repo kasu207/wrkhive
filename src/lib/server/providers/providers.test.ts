@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { garminSport, normalizeGarminActivity } from "./garmin";
+import { garminSport, normalizeGarminActivity, normalizeGarminHealth } from "./garmin";
 import { localNoonInstant } from "./http";
-import { intervalsSport, normalizeAthleteId, normalizeIntervalsActivity, packIntervalsToken, unpackIntervalsToken } from "./intervals";
+import { intervalsSport, normalizeAthleteId, normalizeIntervalsActivity, normalizeIntervalsWellness, packIntervalsToken, unpackIntervalsToken } from "./intervals";
 import { normalizeWahooWorkout, wahooWorkoutType } from "./wahoo";
 
 describe("Garmin", () => {
@@ -90,5 +90,29 @@ describe("intervals.icu", () => {
   });
   it("skips Strava stubs", () => {
     expect(normalizeIntervalsActivity({ id: "x", source: "STRAVA" })).toBeNull();
+  });
+});
+
+describe("daily health values from providers", () => {
+  it("reads Garmin Health API summaries", () => {
+    expect(normalizeGarminHealth("dailies", { calendarDate: "2026-03-06", restingHeartRateInBeatsPerMinute: 48, steps: 9000 })).toEqual({ date: "2026-03-06", restingHr: 48 });
+    expect(normalizeGarminHealth("sleeps", { calendarDate: "2026-03-06", durationInSeconds: 28800, deepSleepDurationInSeconds: 5400, lightSleepDurationInSeconds: 14400, remSleepInSeconds: 5400, awakeDurationInSeconds: 3600 })).toEqual({ date: "2026-03-06", sleepSec: 25200 });
+    expect(normalizeGarminHealth("sleeps", { calendarDate: "2026-03-06", durationInSeconds: 27000 })).toEqual({ date: "2026-03-06", sleepSec: 27000 });
+    expect(normalizeGarminHealth("hrv", { calendarDate: "2026-03-06", lastNightAvg: 64, lastNight5MinHigh: 90 })).toEqual({ date: "2026-03-06", hrv: 64 });
+    // Weighed at 23:30 local time the day before in UTC terms.
+    expect(normalizeGarminHealth("bodyComps", { measurementTimeInSeconds: Date.parse("2026-03-06T22:30:00Z") / 1000, measurementTimeOffsetInSeconds: 3600, weightInGrams: 71850 })).toEqual({ date: "2026-03-06", weightKg: 71.85 });
+    expect(normalizeGarminHealth("dailies", { calendarDate: "2026-03-06" })).toBeNull();
+  });
+
+  it("reads intervals.icu wellness", () => {
+    expect(normalizeIntervalsWellness({ id: "2026-03-06", restingHR: 47, hrv: 71, hrvSDNN: null, sleepSecs: 27000, weight: 70.2 })).toEqual({ date: "2026-03-06", restingHr: 47, hrv: 71, hrvSdnn: null, sleepSec: 27000, weightKg: 70.2 });
+    expect(normalizeIntervalsWellness({ id: "2026-03-06" })).toBeNull();
+    expect(normalizeIntervalsWellness({ id: "gestern", restingHR: 47 })).toBeNull();
+  });
+
+  it("takes the aerobic decoupling intervals.icu computed", () => {
+    const a = normalizeIntervalsActivity({ id: 1, type: "Ride", start_date: "2026-03-06T08:00:00Z", elapsed_time: 3600, decoupling: 4.26 })!;
+    expect(a.decouplingPct).toBe(4.3);
+    expect(normalizeIntervalsActivity({ id: 2, type: "Ride", start_date: "2026-03-06T08:00:00Z", elapsed_time: 3600, decoupling: 900 })!.decouplingPct).toBeNull();
   });
 });

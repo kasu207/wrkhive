@@ -8,6 +8,7 @@ import { Decoder, Stream } from "@garmin/fitsdk";
 import { createHash } from "node:crypto";
 import { unzipSync } from "fflate";
 import type { NormalizedActivity } from "@/lib/server/providers/types";
+import { decoupling, distanceBests, powerBests, type ActivityBests } from "@/lib/analytics/bests";
 import { detectSourceApp } from "@/lib/apps";
 
 type AnyMesg = Record<string, unknown>;
@@ -95,6 +96,65 @@ export function normalizedPowerFromRecords(records: AnyMesg[]): number | null {
     }
   }
   return n ? Math.round((acc / n) ** 0.25) : null;
+}
+
+/**
+ * The record stream resampled to 1 Hz moving time: short gaps are held,
+ * longer gaps (pauses, auto-pause) are dropped, so index = seconds moving.
+ */
+export function seriesFromRecords(records: AnyMesg[]): { power: number[]; hr: (number | null)[]; speed: number[]; distance: number[]; hasPower: boolean; hasDistance: boolean } {
+  const power: number[] = [];
+  const hr: (number | null)[] = [];
+  const speed: number[] = [];
+  const distance: number[] = [];
+  let prev: number | null = null;
+  let cur = { power: 0, hr: null as number | null, speed: 0, distance: 0 };
+  let hasPower = false;
+  let hasDistance = false;
+  for (const r of records) {
+    const t = r.timestamp instanceof Date ? Math.round(r.timestamp.getTime() / 1000) : null;
+    if (t === null) continue;
+    if (prev !== null) {
+      const dt = t - prev;
+      if (dt > 0 && dt <= 5) {
+        for (let i = 0; i < dt; i++) {
+          power.push(cur.power);
+          hr.push(cur.hr);
+          speed.push(cur.speed);
+          distance.push(cur.distance);
+        }
+      }
+    }
+    const p = num(r.power);
+    if (p !== null) {
+      cur.power = p;
+      if (p > 0) hasPower = true;
+    }
+    cur = { ...cur, hr: positive(r.heartRate) ?? (r.heartRate === undefined ? cur.hr : null) };
+    const v = num(r.enhancedSpeed) ?? num(r.speed);
+    if (v !== null) cur.speed = v;
+    const d = num(r.distance);
+    if (d !== null && d >= cur.distance) {
+      cur.distance = d;
+      if (d > 0) hasDistance = true;
+    }
+    prev = t;
+  }
+  return { power, hr, speed, distance, hasPower, hasDistance };
+}
+
+/** Power curve, running bests and aerobic decoupling of one session. */
+export function streamMetrics(records: AnyMesg[], sport: NormalizedActivity["sport"]): { bests: ActivityBests | null; decouplingPct: number | null } {
+  if (records.length < 60) return { bests: null, decouplingPct: null };
+  const s = seriesFromRecords(records);
+  const bests: ActivityBests = {};
+  if (sport === "ride" && s.hasPower) bests.power = powerBests(s.power) ?? undefined;
+  if (sport === "run" && s.hasDistance) bests.pace = distanceBests(s.distance) ?? undefined;
+  const output = sport === "ride" && s.hasPower ? s.power : sport === "run" ? s.speed : null;
+  return {
+    bests: bests.power || bests.pace ? bests : null,
+    decouplingPct: output ? decoupling(output, s.hr) : null,
+  };
 }
 
 const isBikeComputer = (fileId: AnyMesg) =>
@@ -242,6 +302,7 @@ export function decodeFitActivity(bytes: Uint8Array, fileName: string, lthr: num
     const sport = sportOf(s.sport, s.subSport);
     const cadence = positive(s.avgCadence);
     const timeInZone = Array.isArray(s.timeInHrZone) ? (s.timeInHrZone as number[]) : null;
+    const stream = streamMetrics(sessionRecords, sport);
     activities.push({
       externalId: `fit-${hash}-${i}`,
       sport,
@@ -260,6 +321,8 @@ export function decodeFitActivity(bytes: Uint8Array, fileName: string, lthr: num
       avgSpeed: positive(s.enhancedAvgSpeed) ?? positive(s.avgSpeed),
       calories: positive(s.totalCalories),
       hrZoneSec: hrZonesFromRecords(sessionRecords, lthr) ?? (timeInZone && timeInZone.length >= 5 ? timeInZone.slice(0, 5).map((v) => Math.round(v ?? 0)) : null),
+      decouplingPct: stream.decouplingPct,
+      bests: stream.bests,
       deviceName,
       sourceApp: detectSourceApp({ hints: [deviceName === "FIT-Datei" ? null : deviceName, fileName], fallback: "file" }),
     });

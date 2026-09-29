@@ -3,7 +3,7 @@ import { detectSourceApp } from "@/lib/apps";
 import { encodeGarminWorkout } from "@/lib/workout/export/garmin";
 import { env } from "../env";
 import { providerFetch } from "./http";
-import { ProviderError, type NormalizedActivity, type ProviderAdapter, type TokenSet } from "./types";
+import { ProviderError, type NormalizedActivity, type ProviderAdapter, type TokenSet, type WellnessInput } from "./types";
 
 /**
  * Garmin Connect Developer Program (OAuth 2.0 with PKCE).
@@ -11,6 +11,8 @@ import { ProviderError, type NormalizedActivity, type ProviderAdapter, type Toke
  *   Connect syncs them to the watch / Edge.
  * - Activity API: activity summaries arrive via push (or ping) webhooks;
  *   history is requested via backfill and also delivered to the webhook.
+ * - Health API (permission HEALTH_EXPORT): dailies (resting heart rate),
+ *   sleeps, HRV and body composition arrive the same way.
  */
 // Overridable for integration tests against a mock server.
 const AUTHORIZE_URL = process.env.GARMIN_AUTHORIZE_URL ?? "https://connect.garmin.com/oauth2Confirm";
@@ -82,6 +84,39 @@ export function normalizeGarminActivity(a: GarminActivitySummary): NormalizedAct
     deviceName: a.deviceName ?? "Garmin",
     sourceApp: detectSourceApp({ hints: [a.deviceName], name: a.activityName, fallback: "garmin" }),
   };
+}
+
+/** Health API summary types Wrkhive reads, as named in webhook bodies and backfill paths. */
+export const GARMIN_HEALTH_TYPES = ["dailies", "sleeps", "hrv", "bodyComps"] as const;
+export type GarminHealthType = (typeof GARMIN_HEALTH_TYPES)[number];
+
+const gPos = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+const calendarDate = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+
+/** One Health API summary as a daily wellness value; null for summaries without a usable value. */
+export function normalizeGarminHealth(type: GarminHealthType, raw: Record<string, unknown>): WellnessInput | null {
+  if (type === "dailies") {
+    const date = calendarDate(raw.calendarDate);
+    const restingHr = gPos(raw.restingHeartRateInBeatsPerMinute);
+    return date && restingHr ? { date, restingHr } : null;
+  }
+  if (type === "sleeps") {
+    const date = calendarDate(raw.calendarDate);
+    // Asleep time: the stage sum excludes time awake in bed; the total is the fallback.
+    const stages = [raw.deepSleepDurationInSeconds, raw.lightSleepDurationInSeconds, raw.remSleepInSeconds].map(gPos);
+    const sleepSec = stages.some((v) => v !== null) ? stages.reduce<number>((a, b) => a + (b ?? 0), 0) : gPos(raw.durationInSeconds);
+    return date && sleepSec ? { date, sleepSec } : null;
+  }
+  if (type === "hrv") {
+    const date = calendarDate(raw.calendarDate);
+    const hrv = gPos(raw.lastNightAvg);
+    return date && hrv ? { date, hrv } : null;
+  }
+  const time = gPos(raw.measurementTimeInSeconds);
+  const grams = gPos(raw.weightInGrams);
+  if (!time || !grams) return null;
+  const offset = typeof raw.measurementTimeOffsetInSeconds === "number" ? raw.measurementTimeOffsetInSeconds : 0;
+  return { date: new Date((time + offset) * 1000).toISOString().slice(0, 10), weightKg: grams / 1000 };
 }
 
 export const garminAdapter: ProviderAdapter = {
@@ -210,7 +245,7 @@ export const garminAdapter: ProviderAdapter = {
     return id ? { ...input.externalIds, schedule: id } : input.externalIds;
   },
 
-  async sync(accessToken, _connection, since) {
+  async sync(accessToken, connection, since) {
     // Garmin delivers history asynchronously to the activity webhook.
     const end = new Date();
     let start = since;
@@ -239,6 +274,18 @@ export const garminAdapter: ProviderAdapter = {
       requests++;
     }
     if (!accepted && lastError) throw lastError;
+    // Health summaries of the last 90 days (one request per type); only with the HEALTH_EXPORT permission.
+    if (!connection.scopes || connection.scopes.includes("HEALTH_EXPORT")) {
+      const q = new URLSearchParams({
+        summaryStartTimeInSeconds: String(Math.floor(Math.max(since.getTime(), end.getTime() - BACKFILL_MAX_DAYS * 86_400_000) / 1000)),
+        summaryEndTimeInSeconds: String(Math.floor(end.getTime() / 1000)),
+      });
+      for (const type of GARMIN_HEALTH_TYPES) {
+        await providerFetch("Garmin", `${API}/wellness-api/rest/backfill/${type}?${q}`, { headers: { Authorization: `Bearer ${accessToken}` } }).catch((e) => {
+          if (e instanceof ProviderError && e.authExpired) throw e;
+        });
+      }
+    }
     return {
       activities: [],
       asyncRequested: true,
@@ -255,11 +302,11 @@ export const garminAdapter: ProviderAdapter = {
 };
 
 /** Fetches summaries referenced by a ping notification's callback URL. */
-export async function fetchGarminCallback(callbackURL: string, accessToken: string): Promise<GarminActivitySummary[]> {
+export async function fetchGarminCallback<T = GarminActivitySummary>(callbackURL: string, accessToken: string): Promise<T[]> {
   const url = new URL(callbackURL);
   // Only follow callback URLs that point at the Garmin API host (never arbitrary URLs with our token).
   if (url.origin !== new URL(API).origin) throw new ProviderError("Garmin: unerwartete Callback-URL");
   const res = await providerFetch("Garmin", url.toString(), { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await res.json();
-  return Array.isArray(json) ? (json as GarminActivitySummary[]) : [];
+  return Array.isArray(json) ? (json as T[]) : [];
 }

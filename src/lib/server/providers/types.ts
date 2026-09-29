@@ -1,4 +1,5 @@
 import type { DeviceConnection, User } from "@/db/schema";
+import type { ActivityBests } from "@/lib/analytics/bests";
 import type { SourceAppId } from "@/lib/apps";
 import type { WorkoutStructure } from "@/lib/workout/types";
 
@@ -24,6 +25,9 @@ export interface NormalizedActivity {
   avgSpeed?: number | null;
   calories?: number | null;
   hrZoneSec?: number[] | null;
+  /** Aerobic decoupling in percent (record stream or provider analysis). */
+  decouplingPct?: number | null;
+  bests?: ActivityBests | null;
   deviceName?: string | null;
   /** App or device the activity was recorded with (see lib/apps.ts). */
   sourceApp?: SourceAppId | null;
@@ -82,8 +86,19 @@ export interface PlannedOnProvider {
   complete?: { from: string; to: string };
 }
 
+/** Daily health values as a provider delivers them (see schema `wellness`). */
+export interface WellnessInput {
+  date: string;
+  restingHr?: number | null;
+  hrv?: number | null;
+  hrvSdnn?: number | null;
+  sleepSec?: number | null;
+  weightKg?: number | null;
+}
+
 export interface SyncResult {
   activities: NormalizedActivity[];
+  wellness?: WellnessInput[];
   planned?: PlannedOnProvider;
   /** True when the provider delivers data asynchronously (webhooks/backfill). */
   asyncRequested?: boolean;

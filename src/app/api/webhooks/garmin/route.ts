@@ -4,13 +4,16 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { deviceConnections, users, type DeviceConnection } from "@/db/schema";
 import { env } from "@/lib/server/env";
-import { fetchGarminCallback, normalizeGarminActivity, type GarminActivitySummary } from "@/lib/server/providers/garmin";
+import { fetchGarminCallback, GARMIN_HEALTH_TYPES, normalizeGarminActivity, normalizeGarminHealth, type GarminActivitySummary } from "@/lib/server/providers/garmin";
+import type { WellnessInput } from "@/lib/server/providers/types";
 import { accessTokenFor, upsertActivities } from "@/lib/server/sync";
+import { upsertWellness } from "@/lib/server/wellness";
 
 /**
  * Garmin Health/Activity API notifications. Configure this URL (with
- * ?token=$GARMIN_WEBHOOK_TOKEN) in the Garmin developer portal for "Activities" (push or ping), "Deregistrations" and
- * "User Permissions Change". Garmin expects a fast 200 response.
+ * ?token=$GARMIN_WEBHOOK_TOKEN) in the Garmin developer portal for "Activities" (push or ping), "Deregistrations",
+ * "User Permissions Change" and the health summaries "Dailies", "Sleeps", "HRV Summary" and "Body Compositions".
+ * Garmin expects a fast 200 response.
  */
 type Ping = { userId: string; callbackURL: string };
 type ActivityItem = GarminActivitySummary | Ping;
@@ -81,5 +84,23 @@ export async function POST(request: NextRequest) {
       console.error("[garmin] webhook processing failed", e);
     }
   }
+  // Health summaries (resting heart rate, sleep, HRV, weight).
+  const health = new Map<string, WellnessInput[]>();
+  for (const type of GARMIN_HEALTH_TYPES) {
+    for (const item of (body[type] as Record<string, unknown>[] | undefined) ?? []) {
+      const garminUserId = typeof item.userId === "string" ? item.userId : null;
+      if (!garminUserId) continue;
+      const conn = connectionFor(garminUserId);
+      if (!conn || conn.status === "revoked") continue;
+      try {
+        const list = typeof item.callbackURL === "string" ? await fetchGarminCallback<Record<string, unknown>>(item.callbackURL, await accessTokenFor(conn)) : [item];
+        const rows = list.map((raw) => normalizeGarminHealth(type, raw)).filter((w): w is WellnessInput => w !== null);
+        health.set(conn.userId, [...(health.get(conn.userId) ?? []), ...rows]);
+      } catch (e) {
+        console.error("[garmin] health summary failed", e);
+      }
+    }
+  }
+  for (const [userId, rows] of health) if (rows.length) upsertWellness(userId, rows, "garmin");
   return NextResponse.json({ ok: true });
 }

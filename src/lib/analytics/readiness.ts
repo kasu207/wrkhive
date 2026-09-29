@@ -13,6 +13,7 @@
  *   ramp > 8 CTL / week  at least "strained" once form is below -20 %
  */
 import type { PmcPoint } from "./load";
+import type { Recovery } from "./wellness";
 
 export type ReadinessLevel = "fresh" | "productive" | "strained" | "overreached";
 export type AdaptMode = "keep" | "reduce" | "recover";
@@ -60,4 +61,20 @@ export function readinessFromPmc(pmc: PmcPoint[]): Readiness | null {
   };
   const t = texts[level];
   return { level, formPct, ramp, ctl: now.ctl, atl: now.atl, tsb: now.tsb, mode: t.mode, label: t.label, advice: t.advice };
+}
+
+/**
+ * Adds the athlete's recovery signals (HRV, resting heart rate, sleep,
+ * check-in) to the load-based readiness: impaired recovery reduces hard
+ * sessions even when the training load alone would keep the plan.
+ */
+export function withRecovery(readiness: Readiness | null, recovery: Recovery | null): Readiness | null {
+  if (!readiness || !recovery || recovery.level !== "impaired" || readiness.mode !== "keep") return readiness;
+  return {
+    ...readiness,
+    level: "strained",
+    mode: "reduce",
+    label: "Erholung eingeschränkt",
+    advice: `${recovery.reasons.join(", ")}. Harte Einheiten werden etwas kürzer und leichter.`,
+  };
 }

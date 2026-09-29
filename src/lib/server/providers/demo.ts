@@ -1,6 +1,6 @@
 import "server-only";
 import { addDays, dayOfWeek, diffDays, type ISODate } from "@/lib/dates";
-import type { NormalizedActivity } from "./types";
+import type { NormalizedActivity, WellnessInput } from "./types";
 
 /**
  * Demo data source. Used when no Garmin / Wahoo API credentials are configured
@@ -115,6 +115,16 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
     const speed = spec.speed * jitter(0.1);
     const distanceM = Math.round(speed * movingSec);
     const avgHr = hrFor(intensity);
+    const hard = kind === "ride-intervals";
+    const curve: [number, number][] = [
+      [5, hard ? 2.6 + r() * 0.6 : 2 + r() * 0.5],
+      [60, hard ? 1.35 + r() * 0.2 : 1.05 + r() * 0.15],
+      [300, hard ? 1.08 + r() * 0.1 : 0.92 + r() * 0.08],
+      [1200, Math.max(intensity * 1.04, hard ? 0.9 + r() * 0.08 : 0.85)],
+      [3600, intensity * 1.01],
+    ];
+    const power: Record<string, number> = {};
+    for (const [d, f] of curve) if (d <= movingSec) power[String(d)] = Math.round(ftp * f);
     return {
       externalId: `demo-${date}-${index}`,
       sport: "ride",
@@ -132,6 +142,8 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
       avgSpeed: Math.round((distanceM / movingSec) * 100) / 100,
       calories: Math.round((np * movingSec) / 1000 / 1.05),
       hrZoneSec: hrZones(movingSec, avgHr, a.lthr, r),
+      decouplingPct: kind === "ride-long" || kind === "ride-easy" ? Math.round((1 + r() * 6 - progress * 2) * 10) / 10 : null,
+      bests: { power },
       deviceName: "Demo-Gerät",
       sourceApp: "demo",
     };
@@ -151,6 +163,8 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
     const speed = tSpeed * rel;
     const distanceM = Math.round(speed * movingSec);
     const avgHr = hrFor(rel * 1.02);
+    const pace: Record<string, number> = {};
+    for (const [d, f] of [[1000, kind === "run-intervals" ? 0.88 : 0.95], [5000, 0.98], [10000, 0.995]] as const) if (distanceM >= d) pace[String(d)] = Math.round((d / speed) * f);
     return {
       externalId: `demo-${date}-${index}`,
       sport: "run",
@@ -166,6 +180,8 @@ function makeActivity(kind: Kind, date: ISODate, index: number, a: Athlete, prog
       avgSpeed: Math.round((distanceM / movingSec) * 100) / 100,
       calories: Math.round((distanceM / 1000) * 68),
       hrZoneSec: hrZones(movingSec, avgHr, a.lthr, r),
+      decouplingPct: kind === "run-long" || kind === "run-easy" ? Math.round((1.5 + r() * 6 - progress * 2) * 10) / 10 : null,
+      bests: { pace },
       deviceName: "Demo-Gerät",
       sourceApp: "demo",
     };
@@ -213,6 +229,29 @@ export function generateDemoActivities(seed: string, from: ISODate, to: ISODate,
     if (r() < 0.12) continue; // missed session
     const progress = Math.min(1, diffDays(date, historyStart) / span);
     kinds.forEach((k, i) => out.push(makeActivity(k, date, i, athlete, progress, r)));
+  }
+  return out;
+}
+
+/**
+ * Deterministic daily health values for the demo: resting heart rate, HRV
+ * (rMSSD), sleep and weight around stable personal values, with an
+ * occasional rough patch (bad sleep, a cold) every couple of weeks.
+ */
+export function generateDemoWellness(seed: string, from: ISODate, to: ISODate, athlete: Pick<Athlete, "restHr">): WellnessInput[] {
+  const out: WellnessInput[] = [];
+  for (let date = from; date <= to; date = addDays(date, 1)) {
+    const r = rng(hash(`${seed}:wellness:${date}`));
+    const day = diffDays(date, "2024-01-01");
+    const rough = hash(`${seed}:rough:${Math.floor(day / 3)}`) % 7 === 0;
+    const noise = () => r() + r() - 1;
+    out.push({
+      date,
+      restingHr: Math.round(athlete.restHr + noise() * 2.5 + (rough ? 5 : 0)),
+      hrv: Math.round(62 * Math.exp(noise() * 0.12 - (rough ? 0.22 : 0))),
+      sleepSec: Math.round((7.3 + noise() * 0.7 - (rough ? 1.1 : 0)) * 3600),
+      weightKg: Math.round((72.5 + Math.sin(day / 40) * 0.8 + noise() * 0.3) * 10) / 10,
+    });
   }
   return out;
 }

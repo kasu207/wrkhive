@@ -1,18 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { appleWorkoutSchema, importAppleWorkouts } from "@/lib/server/apple-health";
+import { appleDailySchema, appleWorkoutSchema, importAppleDaily, importAppleWorkouts } from "@/lib/server/apple-health";
 import { getCurrentUser } from "@/lib/server/auth";
 
 export const maxDuration = 120;
 
 /** Largest batch the browser sends; the export is split client-side. */
 const MAX_WORKOUTS = 1000;
+const MAX_DAYS = 1000;
 
-const body = z.object({ workouts: z.array(appleWorkoutSchema).max(MAX_WORKOUTS) });
+const body = z.object({ workouts: z.array(appleWorkoutSchema).max(MAX_WORKOUTS).default([]), daily: z.array(appleDailySchema).max(MAX_DAYS).default([]) });
 
 /**
- * Receives the workouts the browser extracted from an Apple Health export
- * (see lib/apple-health.ts). The export itself is never uploaded.
+ * Receives the workouts and daily health values the browser extracted from an
+ * Apple Health export (see lib/apple-health.ts). The export itself is never uploaded.
  */
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
@@ -25,5 +26,5 @@ export async function POST(request: NextRequest) {
   }
   const parsed = body.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: "Ungültige Workout-Daten." }, { status: 400 });
-  return NextResponse.json(importAppleWorkouts(user, parsed.data.workouts));
+  return NextResponse.json({ ...importAppleWorkouts(user, parsed.data.workouts), days: importAppleDaily(user, parsed.data.daily) });
 }

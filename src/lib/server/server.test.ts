@@ -43,6 +43,8 @@ const { importAppleWorkouts, rotateAppleHealthKey, userByAppleHealthKey, revokeA
 const { POST: appleHealthWebhook } = await import("@/app/api/ingest/apple-health/route");
 const { purgeStrayDemoData } = await import("./demo-cleanup");
 const { beginConnect } = await import("./connections");
+const { saveCheckin, upsertWellness, wellnessBetween, recoveryFor } = await import("./wellness");
+const { dashboardData, emptyHint } = await import("./dashboard");
 
 function makeUser(id: string) {
   const db = getDb();
@@ -494,5 +496,70 @@ describe("form calibration", () => {
     expect(warm.ctl).toBeGreaterThan(cold.ctl + 40);
     expect(warm.tsb).toBeGreaterThan(cold.tsb);
     expect(readinessFor(seeded)).not.toBeNull();
+  });
+});
+
+describe("daily health values", () => {
+  it("merges sources per day, keeps sample data off real values and drops implausible ones", () => {
+    const user = makeUser("u-well");
+    const today = todayFor(user);
+    upsertWellness(user.id, [{ date: today, restingHr: 48, sleepSec: 7 * 3600 }], "garmin");
+    upsertWellness(user.id, [{ date: today, hrv: 66, restingHr: 300 }], "intervals");
+    upsertWellness(user.id, [{ date: today, restingHr: 60, hrv: 20 }], "demo");
+    saveCheckin(user.id, { date: today, legs: 4, sleepFeel: 3, motivation: 5 });
+    const [row] = wellnessBetween(user.id, today, today);
+    expect(row).toMatchObject({ restingHr: 48, hrv: 66, sleepSec: 7 * 3600, legs: 4, sleepFeel: 3, motivation: 5 });
+  });
+
+  it("stores Health Auto Export metrics and lets impaired recovery reduce hard sessions", async () => {
+    makeUser("u-hae-metrics");
+    // Stated volume before Wrkhive matches the synced training: fitness starts where it is.
+    getDb().update(schema.users).set({ baselineWeeklyHours: 7 }).where(eq(schema.users.id, "u-hae-metrics")).run();
+    const user = getDb().select().from(schema.users).where(eq(schema.users.id, "u-hae-metrics")).get()!;
+    const today = todayFor(user);
+    // Steady load for eight weeks: the load model alone keeps the plan.
+    upsertActivities(
+      user,
+      { id: null, provider: "manual" },
+      Array.from({ length: 56 }, (_, i) => ({ externalId: `st-${i}`, sport: "ride" as const, name: "Runde", startTime: new Date(`${addDaysIso(today, -i - 1)}T16:00:00Z`), durationSec: 3600, normPower: 170 })),
+    );
+    expect(readinessFor(user)!.mode).toBe("keep");
+
+    const key = rotateAppleHealthKey(user.id);
+    const days = Array.from({ length: 60 }, (_, i) => addDaysIso(today, i - 59));
+    const metrics = [
+      { name: "resting_heart_rate", units: "count/min", data: days.map((d, i) => ({ date: `${d} 00:00:00 +0200`, qty: i >= 54 ? 58 : 48 + (i % 3) - 1 })) },
+      { name: "heart_rate_variability", units: "ms", data: days.map((d, i) => ({ date: `${d} 00:00:00 +0200`, qty: i >= 54 ? 38 : 60 + ((i % 3) - 1) * 3 })) },
+    ];
+    const res = await appleHealthWebhook(
+      new Request("http://localhost/api/ingest/apple-health", { method: "POST", headers: { "content-type": "application/json", "api-key": key }, body: JSON.stringify({ data: { metrics } }) }) as never,
+    );
+    expect(await res.json()).toMatchObject({ ok: true, workouts: 0, days: 60 });
+    expect(wellnessBetween(user.id, days[0], today)[0]).toMatchObject({ hrvSdnn: 60 - 3 });
+
+    const recovery = recoveryFor(user)!;
+    expect(recovery.level).toBe("impaired");
+    const r = readinessFor(user)!;
+    expect(r.mode).toBe("reduce");
+    expect(r.label).toBe("Erholung eingeschränkt");
+
+    const d = dashboardData(user);
+    expect(d.hrv().metric).toBe("hrvSdnn");
+    expect(emptyHint("restingHr", d)).toBeNull();
+    expect(emptyHint("sleep", d)).toContain("Apple Health");
+    expect(d.consistency(3).streak).toBeGreaterThan(5);
+    expect(d.thresholds().suggestions).toEqual([]);
+  });
+
+  it("fills the demo dashboard with health values and best efforts", async () => {
+    const user = makeUser("u-demo-well");
+    const conn = await createConnection(user, "wahoo", { mode: "demo" });
+    await syncConnection(conn);
+    const d = dashboardData(user);
+    expect(d.restingHr().baseline).not.toBeNull();
+    expect(d.hrv().metric).toBe("hrv");
+    expect(Object.keys(d.bests().powerYear).length).toBeGreaterThan(3);
+    expect(d.efficiency().length).toBeGreaterThan(0);
+    expect(d.intensity().sessions).toBeGreaterThan(0);
   });
 });

@@ -5,7 +5,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { coachMessages, type CoachPayload, type User } from "@/db/schema";
-import { focusForForm, FOCUS_LABEL, generatePlan, generateWorkout, interpretRequest, isHard, nextMonday, type PlanRequest } from "@/lib/coach/generator";
+import { focusForForm, FOCUS_LABEL, generatePlan, generateWorkout, interpretRequest, isHard, nextMonday, type Focus, type PlanRequest } from "@/lib/coach/generator";
 import { COACH_SYSTEM_PROMPT } from "@/lib/coach/prompt";
 import type { PlanProposal, PlanWeek } from "@/lib/coach/types";
 import { addDays, dayOfWeek, isISODate, startOfWeek } from "@/lib/dates";
@@ -122,6 +122,113 @@ export async function handlePlanRequest(user: User, req: Omit<PlanRequest, "star
   };
   db.insert(coachMessages).values({ id: newId(), userId: user.id, role: "assistant", content: result.content, payload: result.payload }).run();
   return result;
+}
+
+export interface WorkoutDraftRequest {
+  sport: Sport;
+  /** "auto" picks the focus from the current form (TSB). */
+  focus: Focus | "auto";
+  minutes: number;
+  /** Optional free-text wish, e.g. "mit Kadenzwechseln". */
+  note: string;
+}
+
+export interface WorkoutDraft {
+  name: string;
+  description: string;
+  structure: WorkoutStructure;
+  /** Short explanation of the choice, shown to the athlete. */
+  reason: string;
+  engine: "ai" | "rules";
+}
+
+/**
+ * Generates a single workout for the builder without touching the coach
+ * history. Uses the AI coach when configured, otherwise the rule engine.
+ */
+export async function generateWorkoutDraft(user: User, req: WorkoutDraftRequest): Promise<WorkoutDraft> {
+  if (env.anthropicConfigured()) {
+    try {
+      const draft = await aiDraft(user, req);
+      if (draft) return draft;
+    } catch (e) {
+      console.error("[coach] AI draft failed, using rules", e);
+    }
+  }
+  return rulesDraft(user, req);
+}
+
+function currentTsb(user: User): number | null {
+  const pmc = pmcFor(user, 7);
+  const now = pmc[pmc.length - 1] ?? null;
+  return now && now.ctl > 0 ? now.tsb : null;
+}
+
+function rulesDraft(user: User, req: WorkoutDraftRequest): WorkoutDraft {
+  const t = thresholdsOf(user);
+  const tsb = currentTsb(user);
+  const wish = req.note ? interpretRequest(`${req.sport === "strength" ? "kraft " : ""}${req.note}`) : null;
+  let focus: Focus;
+  let reason: string;
+  if (req.focus !== "auto") {
+    focus = req.focus;
+    reason = tsb !== null && tsb < -25 && isHard(focus) ? `Hinweis: ${formText(tsb)} Eine lockere Einheit wäre heute die schonendere Wahl.` : "";
+  } else if (req.sport === "strength") {
+    focus = wish?.focus ?? "strength-full";
+    reason = "";
+  } else {
+    const wished = wish?.focus && !wish.focus.startsWith("strength") ? wish.focus : null;
+    focus = wished && !(tsb !== null && tsb < -25 && isHard(wished)) ? wished : focusForForm(tsb);
+    reason = `${formText(tsb)} Schwerpunkt: ${FOCUS_LABEL[focus]}.`;
+  }
+  const w = generateWorkout(req.sport, focus, req.minutes, t);
+  return { name: w.name, description: w.description, structure: w.structure, reason, engine: "rules" };
+}
+
+async function aiDraft(user: User, req: WorkoutDraftRequest): Promise<WorkoutDraft | null> {
+  const t = thresholdsOf(user);
+  const sportLabel = { ride: "Radfahren", run: "Laufen", strength: "Krafttraining" }[req.sport];
+  const text = [
+    `Erstelle mir genau ein einzelnes Workout (kein Plan). Sportart: ${sportLabel}.`,
+    req.sport === "strength" ? `Dauer: ca. ${req.minutes} Minuten.` : `Dauer: ca. ${req.minutes} Minuten, bitte möglichst genau einhalten.`,
+    req.focus === "auto" ? "Wähle den Schwerpunkt passend zu meiner aktuellen Form." : `Schwerpunkt: ${FOCUS_LABEL[req.focus]}.`,
+    req.note ? `Wunsch: ${req.note}` : "",
+    "Halte die Antwort in \"reply\" auf ein bis zwei Sätze zur Begründung.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: `<trainingskontext>\n${trainingContext(user)}\n</trainingskontext>\n\n${text}` }];
+
+  const valid = (w: CoachOutput["workout"]) => {
+    if (!w) return null;
+    const parsed = parseWorkoutText(w.steps, req.sport, t);
+    return parsed.errors.length || !parsed.structure.nodes.length ? null : parsed.structure;
+  };
+
+  let response = await callModel(messages);
+  if (response.stop_reason === "refusal") return null;
+  let out = response.parsed_output as CoachOutput | null;
+  let structure = valid(out?.workout ?? null);
+  if (out && !structure) {
+    const problems = out.workout ? collectProblems({ ...out, plan: null, workout: { ...out.workout, sport: req.sport } }, t) : ["Es fehlt das Workout."];
+    const assistantText = response.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
+    response = await callModel([
+      ...messages,
+      { role: "assistant", content: assistantText },
+      { role: "user", content: `Das Workout ist ungültig:\n${problems.slice(0, 12).join("\n")}\nBitte gib die vollständige Antwort erneut mit einem gültigen "workout" für ${sportLabel} aus.` },
+    ]);
+    if (response.stop_reason === "refusal") return null;
+    out = response.parsed_output as CoachOutput | null;
+    structure = valid(out?.workout ?? null);
+  }
+  if (!out?.workout || !structure) return null;
+  return {
+    name: out.workout.name.slice(0, 60),
+    description: out.workout.description.slice(0, 400),
+    structure,
+    reason: out.reply.trim().slice(0, 600),
+    engine: "ai",
+  };
 }
 
 // ---------------------------------------------------------------------------

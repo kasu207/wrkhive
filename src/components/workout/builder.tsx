@@ -34,6 +34,7 @@ import { SPORT_LABEL, type Sport, type Step, type Thresholds, type WorkoutNode, 
 import { zonesFor } from "@/lib/workout/zones";
 import { RepeatBlock, SortableNode, StepRow, type StepHandlers } from "./builder-nodes";
 import { ExercisePicker } from "./exercise-picker";
+import { GeneratePanel } from "./generate-panel";
 import { SendDialog, type ConnectionInfo } from "./send-dialog";
 import { WorkoutChart } from "./workout-chart";
 
@@ -52,6 +53,7 @@ export function WorkoutBuilder({
   connections,
   resetKey,
   openSend = false,
+  engine = "rules",
 }: {
   initial: Initial;
   thresholds: Thresholds;
@@ -59,6 +61,8 @@ export function WorkoutBuilder({
   resetKey: string;
   /** Open the send dialog right away (e.g. to re-send an adapted workout). */
   openSend?: boolean;
+  /** Engine behind "Automatisch erzeugen" (only offered for new workouts). */
+  engine?: "ai" | "rules";
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -356,6 +360,24 @@ export function WorkoutBuilder({
           }))}
         />
       </div>
+
+      {!id ? (
+        <GeneratePanel
+          key={resetKey}
+          sport={sport}
+          engine={engine}
+          onGenerated={(d) => {
+            setName(d.name);
+            setDescription(d.description);
+            setStructure(d.structure);
+            setSelected(null);
+            if (mode === "text") {
+              setText(serializeWorkoutText(d.structure, thresholds));
+              setTextErrors([]);
+            }
+          }}
+        />
+      ) : null}
 
       {/* Summary + chart */}
       <div className="mb-6 overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card">

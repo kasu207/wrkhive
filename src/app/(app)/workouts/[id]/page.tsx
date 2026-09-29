@@ -5,9 +5,13 @@ import { WorkoutBuilder } from "@/components/workout/builder";
 import { getDb } from "@/db";
 import { deviceConnections, workouts } from "@/db/schema";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
+import { env } from "@/lib/server/env";
 import { starterStructure } from "@/lib/workout/edit";
 import type { Sport } from "@/lib/workout/types";
 import { connectionPreference } from "@/lib/apps";
+
+// Generating a workout with the AI coach can take a while.
+export const maxDuration = 120;
 
 export async function generateMetadata(props: PageProps<"/workouts/[id]">): Promise<Metadata> {
   const { id } = await props.params;
@@ -43,6 +47,7 @@ export default async function WorkoutPage(props: PageProps<"/workouts/[id]">) {
         initial={{ id: null, name: "", description: "", structure: starterStructure(sport) }}
         thresholds={thresholdsOf(user)}
         connections={connections}
+        engine={env.anthropicConfigured() ? "ai" : "rules"}
       />
     );
   }

@@ -37,7 +37,7 @@ const schema = await import("@/db/schema");
 const { applyProviderMoves, ensureScheduled, isSameSession, upsertActivities, syncConnection, todayFor } = await import("./sync");
 const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
-const { cyclingFitness, deviceVo2max, formCalibration, pmcFor } = await import("./training");
+const { cyclingFitness, deviceVo2max, formCalibration, pmcFor, trainingContext } = await import("./training");
 const { adaptScheduled, autoAdaptToday, readinessFor, restoreScheduled } = await import("./adapt");
 const { importAppleWorkouts, rotateAppleHealthKey, userByAppleHealthKey, revokeAppleHealthKey } = await import("./apple-health");
 const { POST: appleHealthWebhook } = await import("@/app/api/ingest/apple-health/route");
@@ -45,6 +45,7 @@ const { purgeStrayDemoData } = await import("./demo-cleanup");
 const { beginConnect } = await import("./connections");
 const { saveCheckin, upsertWellness, wellnessBetween, recoveryFor } = await import("./wellness");
 const { dashboardData, emptyHint } = await import("./dashboard");
+const { confirmEntry, createEntries, deleteEntry, dueEntries, isDue, reopenEntry, skipEntry } = await import("./entries");
 
 function makeUser(id: string) {
   const db = getDb();
@@ -283,6 +284,15 @@ describe("coach (rules engine)", () => {
     expect(r.payload?.kind).toBe("plan");
     if (r.payload?.kind === "plan") expect(r.payload.plan.weeks).toHaveLength(6);
   });
+
+  it("follows the profile goals and tells the AI coach about them", async () => {
+    makeUser("u-goals");
+    getDb().update(schema.users).set({ goals: ["muscle", "endurance"], goalNote: "10 Klimmzüge" }).where(eq(schema.users.id, "u-goals")).run();
+    const user = getDb().select().from(schema.users).where(eq(schema.users.id, "u-goals")).get()!;
+    const r = await handleCoachMessage(user, "Was soll ich heute trainieren?");
+    expect(r.payload?.kind === "workout" && r.payload.workout.sport).toBe("strength");
+    expect(trainingContext(user)).toContain("Trainingsziele: Muskelaufbau (Hauptziel), Ausdauer verbessern; in eigenen Worten: „10 Klimmzüge“");
+  });
 });
 
 describe("coach (Claude)", () => {
@@ -496,6 +506,65 @@ describe("form calibration", () => {
     expect(warm.ctl).toBeGreaterThan(cold.ctl + 40);
     expect(warm.tsb).toBeGreaterThan(cold.tsb);
     expect(readinessFor(seeded)).not.toBeNull();
+  });
+});
+
+describe("calendar entries", () => {
+  const entry = (date: string, extra: Partial<Parameters<typeof createEntries>[1]> = {}) => ({ date, time: null, name: "Jiu-Jitsu", sport: "other" as const, durationMin: 90, rpe: 7, note: null, repeatWeeks: 0, ...extra });
+
+  it("asks for confirmation after the session, records the rating and yields to a later recording", () => {
+    const user = makeUser("u-entry");
+    const today = todayFor(user);
+    const yesterday = addDaysIso(today, -1);
+    const [past] = createEntries(user, entry(yesterday, { time: "19:00" }));
+    const series = createEntries(user, entry(addDaysIso(today, 2), { repeatWeeks: 3 }));
+    expect(series).toHaveLength(4);
+    expect(new Set(series.map((s) => s.seriesId)).size).toBe(1);
+    expect(dueEntries(user).map((e) => e.id)).toEqual([past.id]);
+
+    const r = confirmEntry(user, past.id, { durationMin: 80, rpe: 8 });
+    expect(r).toMatchObject({ ok: true, linked: false });
+    const manual = getDb().select().from(schema.activities).where(eq(schema.activities.userId, user.id)).all();
+    expect(manual).toHaveLength(1);
+    expect(manual[0]).toMatchObject({ provider: "manual", sport: "other", date: yesterday, durationSec: 80 * 60, rpe: 8, tss: 120 });
+    expect(dueEntries(user)).toEqual([]);
+    expect(confirmEntry(user, past.id, { durationMin: 80, rpe: 8 }).ok).toBe(false);
+
+    // The watch recorded the session after all (other start time): it replaces the manual record, the rating stays.
+    upsertActivities(user, { id: null, provider: "apple" }, [{ externalId: "bjj-watch", sport: "other", name: "Kampfsport", startTime: new Date(`${yesterday}T15:00:00Z`), durationSec: 85 * 60 }]);
+    const acts = getDb().select().from(schema.activities).where(eq(schema.activities.userId, user.id)).all();
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({ externalId: "bjj-watch", rpe: 8, tssMethod: "rpe" });
+    const linked = getDb().select().from(schema.calendarEntries).where(eq(schema.calendarEntries.id, past.id)).get()!;
+    expect(linked).toMatchObject({ status: "done", completion: "synced", activityId: acts[0].id });
+
+    // Reopening a synced entry keeps the recording.
+    expect(reopenEntry(user.id, past.id)).toBe(true);
+    expect(getDb().select().from(schema.activities).where(eq(schema.activities.userId, user.id)).all()).toHaveLength(1);
+
+    expect(deleteEntry(user.id, series[1].id, true)).toBe(3);
+    expect(skipEntry(user.id, series[0].id)).toBe(true);
+  });
+
+  it("is completed by a synced activity of the same sport without asking", () => {
+    const user = makeUser("u-entry-sync");
+    const today = todayFor(user);
+    const day = addDaysIso(today, -2);
+    const [e] = createEntries(user, entry(day, { sport: "strength", name: "Studio" }));
+    upsertActivities(user, { id: null, provider: "apple" }, [{ externalId: "run-1", sport: "run", name: "Lauf", startTime: new Date(`${day}T06:00:00Z`), durationSec: 1800, distanceM: 6000 }]);
+    expect(dueEntries(user).map((x) => x.id)).toEqual([e.id]);
+    upsertActivities(user, { id: null, provider: "apple" }, [{ externalId: "gym-1", sport: "strength", name: "Krafttraining", startTime: new Date(`${day}T17:00:00Z`), durationSec: 3600 }]);
+    expect(dueEntries(user)).toEqual([]);
+    expect(getDb().select().from(schema.calendarEntries).where(eq(schema.calendarEntries.id, e.id)).get()).toMatchObject({ status: "done", completion: "synced" });
+  });
+
+  it("becomes due today once its planned end has passed", () => {
+    const e = { date: "2026-05-04", time: "18:00", durationMin: 90, status: "planned" as const };
+    expect(isDue(e, "2026-05-04", new Date("2026-05-04T17:30:00Z"), "Europe/Berlin")).toBe(true);
+    expect(isDue(e, "2026-05-04", new Date("2026-05-04T17:29:00Z"), "Europe/Berlin")).toBe(false);
+    expect(isDue({ ...e, time: null }, "2026-05-04", new Date("2026-05-04T21:00:00Z"), "Europe/Berlin")).toBe(false);
+    expect(isDue(e, "2026-05-05", new Date(), "Europe/Berlin")).toBe(true);
+    expect(isDue({ ...e, status: "done" }, "2026-05-05", new Date(), "Europe/Berlin")).toBe(false);
   });
 });
 

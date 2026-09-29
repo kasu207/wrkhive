@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, Plus, Search, Send, SkipForward, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { CalendarPlus, Check, ChevronLeft, ChevronRight, CircleAlert, Plus, Repeat, Search, Send, SkipForward, Sparkles, Trash2, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { deletePlan } from "@/app/actions/coach";
+import { moveCalendarEntry } from "@/app/actions/entries";
 import { moveScheduled, scheduleWorkout, setScheduledStatus, unschedule } from "@/app/actions/workouts";
 import { SPORT_COLOR, SportIcon, SportTile } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import { WorkoutChart } from "@/components/workout/workout-chart";
 import { cn } from "@/lib/cn";
 import { addDays, displayDate, isoWeekNumber } from "@/lib/dates";
 import { ManualActivityDialog } from "@/components/manual-activity-button";
+import { EntryDetailDialog, EntryFormDialog, type CalEntry } from "./entry-dialogs";
 import { formatDateShort, formatDayLong, formatDuration } from "@/lib/format";
 import type { Sport, Thresholds, WorkoutStructure } from "@/lib/workout/types";
 
@@ -65,6 +67,7 @@ export function CalendarView({
   weeks,
   today,
   items,
+  entries = [],
   acts,
   plans,
   library,
@@ -75,6 +78,7 @@ export function CalendarView({
   weeks: number;
   today: string;
   items: CalWorkout[];
+  entries?: CalEntry[];
   acts: CalActivity[];
   plans: CalPlan[];
   library: LibraryOption[];
@@ -89,6 +93,8 @@ export function CalendarView({
   const [detail, setDetail] = useState<CalWorkout | null>(null);
   const [addDay, setAddDay] = useState<string | null>(null);
   const [recordDay, setRecordDay] = useState<string | null>(null);
+  const [entryDay, setEntryDay] = useState<string | null>(null);
+  const [entryDetail, setEntryDetail] = useState<CalEntry | null>(null);
   const [sendItem, setSendItem] = useState<CalWorkout | null>(null);
   const [optimistic, setOptimistic] = useState<Record<string, string>>({});
 
@@ -101,6 +107,14 @@ export function CalendarView({
     }
     return m;
   }, [items, optimistic]);
+  const entriesByDay = useMemo(() => {
+    const m = new Map<string, CalEntry[]>();
+    for (const e of entries) {
+      const d = optimistic[`e:${e.id}`] ?? e.date;
+      m.set(d, [...(m.get(d) ?? []), e]);
+    }
+    return m;
+  }, [entries, optimistic]);
   const actsByDay = useMemo(() => {
     const m = new Map<string, CalActivity[]>();
     for (const a of acts) m.set(a.date, [...(m.get(a.date) ?? []), a]);
@@ -117,6 +131,15 @@ export function CalendarView({
 
   const onDrop = (day: string) => {
     if (!dragId) return;
+    if (dragId.startsWith("e:")) {
+      const e = entries.find((x) => `e:${x.id}` === dragId);
+      setDropDay(null);
+      setDragId(null);
+      if (!e || (optimistic[dragId] ?? e.date) === day) return;
+      setOptimistic((o) => ({ ...o, [`e:${e.id}`]: day }));
+      act(() => moveCalendarEntry(e.id, day), "Verschoben");
+      return;
+    }
     const it = items.find((i) => i.scheduledId === dragId);
     setDropDay(null);
     setDragId(null);
@@ -177,9 +200,10 @@ export function CalendarView({
         {Array.from({ length: weeks }, (_, w) => {
           const weekDays = days.slice(w * 7, w * 7 + 7);
           const planned = weekDays.flatMap((d) => byDay.get(d) ?? []);
+          const plannedEntries = weekDays.flatMap((d) => entriesByDay.get(d) ?? []).filter((e) => e.status !== "skipped");
           const done = weekDays.flatMap((d) => actsByDay.get(d) ?? []);
-          const plannedSec = planned.reduce((a, p) => a + p.workout.durationSec, 0);
-          const plannedTss = planned.reduce((a, p) => a + p.workout.tss, 0);
+          const plannedSec = planned.reduce((a, p) => a + p.workout.durationSec, 0) + plannedEntries.reduce((a, e) => a + e.durationMin * 60, 0);
+          const plannedTss = planned.reduce((a, p) => a + p.workout.tss, 0) + plannedEntries.reduce((a, e) => a + e.tss, 0);
           const doneSec = done.reduce((a, p) => a + p.durationSec, 0);
           const doneTss = done.reduce((a, p) => a + (p.tss ?? 0), 0);
           const planWeek = plans.flatMap((p) => p.weeks).find((pw) => pw.startDate === weekDays[0]);
@@ -196,6 +220,7 @@ export function CalendarView({
                   const isToday = day === today;
                   const past = day < today;
                   const dayItems = byDay.get(day) ?? [];
+                  const dayEntries = entriesByDay.get(day) ?? [];
                   const dayActs = (actsByDay.get(day) ?? []).filter((a) => !a.linked);
                   return (
                     <div
@@ -264,6 +289,51 @@ export function CalendarView({
                             </div>
                             <div className="mt-0.5 text-[11px] text-ink-3 tabular">
                               {formatDuration(it.workout.durationSec, { compact: true })} · {it.workout.tss} TSS
+                            </div>
+                          </button>
+                        ))}
+                        {dayEntries.map((e) => (
+                          <button
+                            key={e.id}
+                            type="button"
+                            draggable={e.status === "planned"}
+                            onDragStart={(ev) => {
+                              setDragId(`e:${e.id}`);
+                              ev.dataTransfer.effectAllowed = "move";
+                            }}
+                            onDragEnd={() => {
+                              setDragId(null);
+                              setDropDay(null);
+                            }}
+                            onClick={() => setEntryDetail(e)}
+                            className={cn(
+                              "block w-full rounded-lg border border-dashed px-2 py-1.5 text-left transition-[border-color,box-shadow,opacity] hover:shadow-card",
+                              e.status === "done"
+                                ? "border-[#c9e9c9] bg-good-soft/60"
+                                : e.status === "skipped"
+                                  ? "border-border bg-surface-2 opacity-60"
+                                  : e.due
+                                    ? "border-[#f5dca6] bg-warning-soft/70"
+                                    : "border-border-strong bg-surface",
+                              e.status === "planned" && "cursor-grab active:cursor-grabbing",
+                              dragId === `e:${e.id}` && "opacity-40",
+                            )}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="size-2 shrink-0 rounded-full" style={{ background: SPORT_COLOR[e.sport] }} />
+                              <span className={cn("truncate text-[12px] font-semibold", e.status === "skipped" && "line-through")}>{e.name}</span>
+                              {e.status === "done" ? (
+                                <Check className="ml-auto size-3.5 shrink-0 text-good-ink" />
+                              ) : e.due ? (
+                                <CircleAlert className="ml-auto size-3.5 shrink-0 text-warning-ink" aria-label="Freigeben und bewerten" />
+                              ) : e.seriesId ? (
+                                <Repeat className="ml-auto size-3 shrink-0 text-ink-3" aria-label="wöchentlich" />
+                              ) : null}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-ink-3 tabular">
+                              {e.time ? `${e.time} · ` : ""}
+                              {formatDuration(e.durationMin * 60, { compact: true })}
+                              {e.due ? " · bewerten" : ` · ${e.tss} TSS`}
                             </div>
                           </button>
                         ))}
@@ -408,6 +478,11 @@ export function CalendarView({
           setAddDay(null);
           setRecordDay(day);
         }}
+        onEntry={() => {
+          const day = addDay!;
+          setAddDay(null);
+          setEntryDay(day);
+        }}
         onPick={(id) => {
           const day = addDay!;
           setAddDay(null);
@@ -415,6 +490,8 @@ export function CalendarView({
         }}
       />
       <ManualActivityDialog open={!!recordDay} day={recordDay} onClose={() => setRecordDay(null)} />
+      <EntryFormDialog day={entryDay} onClose={() => setEntryDay(null)} />
+      <EntryDetailDialog key={entryDetail?.id} entry={entryDetail} onClose={() => setEntryDetail(null)} />
     </div>
   );
 }
@@ -442,6 +519,7 @@ function AddDialog({
   onClose,
   onPick,
   onRecord,
+  onEntry,
 }: {
   day: string | null;
   today: string;
@@ -449,11 +527,25 @@ function AddDialog({
   onClose: () => void;
   onPick: (id: string) => void;
   onRecord: () => void;
+  onEntry: () => void;
 }) {
   const [q, setQ] = useState("");
   const list = library.filter((l) => !q.trim() || l.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 60);
   return (
-    <Dialog open={!!day} onClose={onClose} title={day && day < today ? "Tag bearbeiten" : "Workout einplanen"} description={day ? formatDayLong(displayDate(day)) : undefined}>
+    <Dialog open={!!day} onClose={onClose} title={day && day < today ? "Tag bearbeiten" : "Einplanen"} description={day ? formatDayLong(displayDate(day)) : undefined}>
+      <button
+        type="button"
+        onClick={onEntry}
+        className="mb-2 flex w-full items-center gap-3 rounded-xl border border-border-strong bg-surface px-3.5 py-3 text-left hover:bg-surface-2"
+      >
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
+          <CalendarPlus className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium">Termin planen</span>
+          <span className="block text-[12px] text-ink-3">Jiu-Jitsu, Krafttraining oder Gruppenausfahrt, auch wöchentlich. Danach bestätigst und bewertest du ihn.</span>
+        </span>
+      </button>
       {day && day <= today ? (
         <button
           type="button"

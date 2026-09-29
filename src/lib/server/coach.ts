@@ -7,6 +7,7 @@ import { getDb } from "@/db";
 import { coachMessages, type CoachPayload, type User } from "@/db/schema";
 import { focusForForm, FOCUS_LABEL, generatePlan, generateWorkout, interpretRequest, isHard, nextMonday, type Focus, type PlanRequest } from "@/lib/coach/generator";
 import { COACH_SYSTEM_PROMPT } from "@/lib/coach/prompt";
+import { defaultMinutes, focusForGoal, goalsOf } from "@/lib/goals";
 import type { PlanProposal, PlanWeek } from "@/lib/coach/types";
 import { addDays, dayOfWeek, isISODate, startOfWeek } from "@/lib/dates";
 import { newId } from "@/lib/id";
@@ -114,7 +115,7 @@ export async function handlePlanRequest(user: User, req: Omit<PlanRequest, "star
 
   const db = getDb();
   db.insert(coachMessages).values({ id: newId(), userId: user.id, role: "user", content: text }).run();
-  const plan = generatePlan({ ...req, startDate: todayFor(user) }, thresholdsOf(user));
+  const plan = generatePlan({ ...req, startDate: todayFor(user), goals: goalsOf(user.goals) }, thresholdsOf(user));
   const result: CoachResult = {
     content: `Hier ist dein Plan **${plan.name}**. Schau ihn dir an und übernimm ihn mit einem Klick in deinen Kalender. Jede Einheit kannst du danach noch anpassen.`,
     payload: { kind: "plan", plan },
@@ -178,7 +179,7 @@ function rulesDraft(user: User, req: WorkoutDraftRequest): WorkoutDraft {
     reason = "";
   } else {
     const wished = wish?.focus && !wish.focus.startsWith("strength") ? wish.focus : null;
-    focus = wished && !(tsb !== null && tsb < -25 && isHard(wished)) ? wished : focusForForm(tsb);
+    focus = wished && !(tsb !== null && tsb < -25 && isHard(wished)) ? wished : focusForGoal(focusForForm(tsb), goalsOf(user.goals));
     reason = `${formText(tsb)} Schwerpunkt: ${FOCUS_LABEL[focus]}.`;
   }
   const w = generateWorkout(req.sport, focus, req.minutes, t);
@@ -401,8 +402,9 @@ function rulesReply(user: User, message: string): CoachResult {
         hoursPerWeek: hoursMatch ? Number(hoursMatch[1].replace(",", ".")) : Math.max(4, Math.round(avgWeeklyHours(user))),
         trainingDays: [1, 3, 5, 6],
         longDay: 6,
-        strength: /kraft/.test(s),
+        strength: /kraft/.test(s) || goalsOf(user.goals).includes("muscle"),
         startDate: todayFor(user),
+        goals: goalsOf(user.goals),
       },
       t,
     );
@@ -423,14 +425,15 @@ function rulesReply(user: User, message: string): CoachResult {
   }
 
   const req = interpretRequest(message);
-  const sport: Sport = req.sport ?? preferredSport(user);
-  let focus = req.focus ?? (sport === "strength" ? "strength-full" : focusForForm(tsb));
+  const goals = goalsOf(user.goals);
+  const sport: Sport = req.sport ?? (goals[0] === "muscle" ? "strength" : preferredSport(user));
+  let focus = req.focus ?? (sport === "strength" ? "strength-full" : focusForGoal(focusForForm(tsb), goals));
   let note = "";
   if (tsb !== null && tsb < -25 && isHard(focus)) {
     note = ` Da deine Form (TSB ${Math.round(tsb)}) gerade hohe Ermüdung zeigt, habe ich statt ${FOCUS_LABEL[focus]} eine lockere Grundlageneinheit gewählt.`;
     focus = "endurance";
   }
-  const minutes = req.minutes ?? (sport === "strength" ? 45 : 60);
+  const minutes = req.minutes ?? (sport === "strength" ? 45 : defaultMinutes(goals));
   const w = generateWorkout(sport, focus, minutes, t);
   const sum = summarize(w.structure, t);
   return {

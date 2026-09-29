@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CoachView } from "@/components/coach/coach-view";
 import { PageHeader } from "@/components/ui/card";
+import { goalsOf, wantsStrength } from "@/lib/goals";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
 import { coachHistory } from "@/lib/server/coach";
 import { env } from "@/lib/server/env";
@@ -21,6 +22,7 @@ export default async function CoachPage(props: PageProps<"/coach">) {
         thresholds={thresholdsOf(user)}
         engine={env.anthropicConfigured() ? "ai" : "rules"}
         initialTab={tab === "plan" ? "plan" : "chat"}
+        planDefaults={{ goal: user.goalNote ?? "", strength: wantsStrength(goalsOf(user.goals)) }}
       />
     </div>
   );

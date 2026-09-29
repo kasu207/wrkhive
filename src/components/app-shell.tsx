@@ -8,6 +8,7 @@ import { logout } from "@/app/actions/auth";
 import { Logo, LogoMark } from "@/components/brand";
 import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { CURRENT_VERSION } from "@/lib/release-notes";
 
 const NAV = [
   { href: "/dashboard", label: "Übersicht", icon: LayoutDashboard },
@@ -24,7 +25,18 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppShell({ user, demo, children }: { user: { name: string; email: string }; demo: boolean; children: ReactNode }) {
+export function AppShell({
+  user,
+  demo,
+  badges = {},
+  children,
+}: {
+  user: { name: string; email: string };
+  demo: boolean;
+  /** Open items per navigation entry (e.g. calendar entries waiting for confirmation). */
+  badges?: Record<string, number>;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
   const initials = user.name
     .split(/\s+/)
@@ -63,6 +75,11 @@ export function AppShell({ user, demo, children }: { user: { name: string; email
               >
                 <Icon className={cn("size-[18px]", active ? "text-ink" : "text-ink-3 group-hover:text-ink-2")} />
                 {label}
+                {badges[href] ? (
+                  <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-warning-soft px-1.5 text-[11px] font-semibold text-warning-ink tabular" title="Offene Termine zum Freigeben">
+                    {badges[href]}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -87,6 +104,9 @@ export function AppShell({ user, demo, children }: { user: { name: string; email
               </button>
             </form>
           </div>
+          <Link href="/release-notes" className="mt-1 block px-2 text-[11px] text-ink-3 transition-colors hover:text-ink-2">
+            Neuigkeiten · Version {CURRENT_VERSION}
+          </Link>
         </div>
       </aside>
 
@@ -118,7 +138,10 @@ export function AppShell({ user, demo, children }: { user: { name: string; email
           const active = isActive(pathname, href);
           return (
             <Link key={href} href={href} aria-current={active ? "page" : undefined} className={cn("flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium", active ? "text-ink" : "text-ink-3")}>
-              <Icon className="size-[21px]" strokeWidth={active ? 2.2 : 1.8} />
+              <span className="relative">
+                <Icon className="size-[21px]" strokeWidth={active ? 2.2 : 1.8} />
+                {badges[href] ? <span className="absolute -right-1.5 -top-1 size-2.5 rounded-full border-2 border-surface bg-warning" aria-label="Offene Termine" /> : null}
+              </span>
               {label}
             </Link>
           );

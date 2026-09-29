@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DashboardEditor } from "@/components/dashboard/editor";
+import { PendingEntries } from "@/components/pending-entries";
 import { Widget } from "@/components/dashboard/widgets";
 import { Card } from "@/components/ui/card";
 import { getDb } from "@/db";
@@ -15,6 +16,7 @@ import { formatDayLong, relativeTime } from "@/lib/format";
 import { autoAdaptToday } from "@/lib/server/adapt";
 import { requireUser } from "@/lib/server/auth";
 import { dashboardData, emptyHint } from "@/lib/server/dashboard";
+import { dueEntries, entryView } from "@/lib/server/entries";
 import { PROVIDERS } from "@/lib/server/sync";
 
 export const metadata: Metadata = { title: "Übersicht" };
@@ -83,6 +85,8 @@ export default async function DashboardPage() {
           <DashboardEditor layout={layout} hints={hints} />
         </div>
       </div>
+
+      <PendingEntries entries={dueEntries(user).map((e) => entryView(e, today, user.timeZone))} />
 
       {setup && setup.done < setup.steps.length ? (
         <Card className="p-5">

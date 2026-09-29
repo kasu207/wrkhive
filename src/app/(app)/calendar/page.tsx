@@ -4,11 +4,13 @@ import type { Metadata } from "next";
 import { CalendarView } from "@/components/calendar/calendar-view";
 import { ButtonLink } from "@/components/ui/button";
 import { ManualActivityButton } from "@/components/manual-activity-button";
+import { PendingEntries } from "@/components/pending-entries";
 import { PageHeader } from "@/components/ui/card";
 import { getDb } from "@/db";
 import { deviceConnections, trainingPlans, workouts } from "@/db/schema";
 import { addDays, isISODate, startOfWeek } from "@/lib/dates";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
+import { dueEntries, entriesBetween, entryView } from "@/lib/server/entries";
 import { todayFor } from "@/lib/server/sync";
 import { activitiesBetween, scheduledBetween } from "@/lib/server/training";
 import { connectionPreference } from "@/lib/apps";
@@ -27,7 +29,9 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
 
   const scheduled = scheduledBetween(user.id, start, end);
   const acts = activitiesBetween(user.id, start, end);
-  const linked = new Set(scheduled.map((s) => s.scheduled.activityId).filter(Boolean));
+  const entries = entriesBetween(user.id, start, end);
+  const due = dueEntries(user);
+  const linked = new Set([...scheduled.map((s) => s.scheduled.activityId), ...entries.map((e) => e.activityId)].filter(Boolean));
   const plans = db
     .select()
     .from(trainingPlans)
@@ -62,6 +66,11 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
           </>
         }
       />
+      {due.length ? (
+        <div className="mb-5">
+          <PendingEntries entries={due.map((e) => entryView(e, today, user.timeZone))} />
+        </div>
+      ) : null}
       <CalendarView
         start={start}
         weeks={WEEKS}
@@ -74,6 +83,7 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
           adapted: Boolean(s.originalWorkoutId),
           workout: { id: w.id, name: w.name, description: w.description, sport: w.sport, structure: w.structure, durationSec: w.durationSec, tss: w.tss },
         }))}
+        entries={entries.map((e) => entryView(e, today, user.timeZone))}
         acts={acts.map((a) => ({
           id: a.id,
           date: a.date,

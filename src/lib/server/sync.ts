@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, gte, inArray, lte, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activities, deliveries, deviceConnections, scheduledWorkouts, users, workouts, type DeviceConnection, type User } from "@/db/schema";
+import { activities, calendarEntries, deliveries, deviceConnections, scheduledWorkouts, users, workouts, type DeviceConnection, type User } from "@/db/schema";
 import { activityLoad, effectiveVo2max } from "@/lib/analytics/load";
 import { addDays, type ISODate } from "@/lib/dates";
 import { newId } from "@/lib/id";
@@ -211,36 +211,66 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
   return { inserted, updated, merged };
 }
 
-/** Marks planned workouts as done when an activity of the same sport exists on that day. */
+/**
+ * Marks planned workouts and calendar entries as done when an activity of the
+ * same sport exists on that day. A synced activity also replaces the manual
+ * record of an entry the athlete already rated (the recording is more exact);
+ * the rating stays with the recording.
+ */
 export function matchPlannedWorkouts(userId: string, dates: ISODate[]) {
+  if (!dates.length) return;
   const db = getDb();
+  const acts = db
+    .select({ id: activities.id, date: activities.date, sport: activities.sport, provider: activities.provider, sourceApp: activities.sourceApp, rpe: activities.rpe })
+    .from(activities)
+    .where(and(eq(activities.userId, userId), inArray(activities.date, dates)))
+    .all();
+  if (!acts.length) return;
+  const used = new Set<string>();
+  for (const r of db.select({ a: scheduledWorkouts.activityId }).from(scheduledWorkouts).where(and(eq(scheduledWorkouts.userId, userId), inArray(scheduledWorkouts.date, dates))).all()) if (r.a) used.add(r.a);
+  for (const r of db.select({ a: calendarEntries.activityId }).from(calendarEntries).where(and(eq(calendarEntries.userId, userId), inArray(calendarEntries.date, dates))).all()) if (r.a) used.add(r.a);
+
   const planned = db
     .select({ id: scheduledWorkouts.id, date: scheduledWorkouts.date, sport: workouts.sport })
     .from(scheduledWorkouts)
     .innerJoin(workouts, eq(workouts.id, scheduledWorkouts.workoutId))
     .where(and(eq(scheduledWorkouts.userId, userId), eq(scheduledWorkouts.status, "planned"), inArray(scheduledWorkouts.date, dates)))
     .all();
-  if (!planned.length) return;
-  const acts = db
-    .select({ id: activities.id, date: activities.date, sport: activities.sport })
-    .from(activities)
-    .where(and(eq(activities.userId, userId), inArray(activities.date, dates)))
-    .all();
-  const used = new Set(
-    db
-      .select({ a: scheduledWorkouts.activityId })
-      .from(scheduledWorkouts)
-      .where(and(eq(scheduledWorkouts.userId, userId), inArray(scheduledWorkouts.date, dates)))
-      .all()
-      .map((r) => r.a)
-      .filter(Boolean),
-  );
   for (const p of planned) {
     const match = acts.find((a) => a.date === p.date && a.sport === p.sport && !used.has(a.id));
     if (match) {
       used.add(match.id);
       db.update(scheduledWorkouts).set({ status: "done", activityId: match.id }).where(eq(scheduledWorkouts.id, p.id)).run();
     }
+  }
+
+  const entries = db
+    .select()
+    .from(calendarEntries)
+    .where(and(eq(calendarEntries.userId, userId), inArray(calendarEntries.date, dates), or(eq(calendarEntries.status, "planned"), eq(calendarEntries.completion, "rated"))))
+    .all();
+  const recorded = (a: (typeof acts)[number]) => !(a.provider === "manual" && a.sourceApp === "manual");
+  let user: User | undefined;
+  for (const e of entries) {
+    const rated = e.status === "done" && e.completion === "rated";
+    const match = acts.find((a) => a.date === e.date && a.sport === e.sport && !used.has(a.id) && (!rated || recorded(a)));
+    if (!match) continue;
+    used.add(match.id);
+    db.transaction((tx) => {
+      if (rated && e.activityId) {
+        tx.delete(activities).where(and(eq(activities.id, e.activityId), eq(activities.userId, userId), eq(activities.provider, "manual"), eq(activities.sourceApp, "manual"))).run();
+        // The athlete's rating fills in where the recording has no better load source.
+        if (e.rpe && !match.rpe) {
+          user ??= tx.select().from(users).where(eq(users.id, userId)).get();
+          const row = tx.select().from(activities).where(eq(activities.id, match.id)).get();
+          if (user && row) {
+            const l = activityLoad({ ...row, rpe: e.rpe }, user);
+            tx.update(activities).set({ rpe: e.rpe, tss: l.tss, tssMethod: l.method }).where(eq(activities.id, match.id)).run();
+          }
+        }
+      }
+      tx.update(calendarEntries).set({ status: "done", activityId: match.id, completion: "synced" }).where(eq(calendarEntries.id, e.id)).run();
+    });
   }
 }
 

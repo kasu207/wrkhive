@@ -57,4 +57,30 @@ describe("plan generator", () => {
     expect(sports.has("ride")).toBe(true);
     expect(sports.has("run")).toBe(true);
   });
+
+  it("follows the athlete's goals", () => {
+    const base = { goal: "", sport: "ride" as const, eventDate: null, weeks: 8, hoursPerWeek: 7, trainingDays: [0, 1, 2, 3, 4, 5, 6], longDay: 6, strength: true, startDate: "2026-09-28" };
+    const count = (plan: ReturnType<typeof generatePlan>, pred: (name: string, sport: string) => boolean) => plan.weeks.flatMap((w) => w.sessions).filter((s) => pred(s.name, s.sport)).length;
+    const plain = generatePlan(base, T);
+    const muscle = generatePlan({ ...base, goals: ["muscle"] }, T);
+    expect(count(muscle, (_, sport) => sport === "strength")).toBeGreaterThan(count(plain, (_, sport) => sport === "strength"));
+    const health = generatePlan({ ...base, goals: ["health"] }, T);
+    expect(count(plain, (name) => name.startsWith("VO2max"))).toBeGreaterThan(0);
+    expect(count(health, (name) => name.startsWith("VO2max"))).toBe(0);
+  });
+});
+
+describe("goals", async () => {
+  const { focusForGoal, goalsOf, wantsStrength, goalContext } = await import("../goals");
+  it("reads stored goals and steers the focus", () => {
+    expect(goalsOf(["weight", "bogus", "weight", "muscle"])).toEqual(["weight", "muscle"]);
+    expect(goalsOf(null)).toEqual([]);
+    expect(focusForGoal("vo2", ["health"])).toBe("tempo");
+    expect(focusForGoal("vo2", ["weight"])).toBe("threshold");
+    expect(focusForGoal("tempo", ["performance"])).toBe("threshold");
+    expect(focusForGoal("vo2", [])).toBe("vo2");
+    expect(wantsStrength(["performance"])).toBe(false);
+    expect(wantsStrength([])).toBe(true);
+    expect(goalContext(["muscle", "endurance"], "Klimmzüge schaffen")).toBe("Trainingsziele: Muskelaufbau (Hauptziel), Ausdauer verbessern; in eigenen Worten: „Klimmzüge schaffen“");
+  });
 });

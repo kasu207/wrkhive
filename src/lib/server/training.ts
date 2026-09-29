@@ -1,10 +1,11 @@
 import "server-only";
 import { and, asc, desc, eq, gte, lte, min, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activities, scheduledWorkouts, wellness, workouts, type User } from "@/db/schema";
+import { activities, calendarEntries, scheduledWorkouts, wellness, workouts, type User } from "@/db/schema";
 import { baselineDailyLoad, cyclingVo2max, FTP_OF_5MIN, performanceChart, predictRaceTime, type PmcPoint } from "@/lib/analytics/load";
 import { readinessFromPmc } from "@/lib/analytics/readiness";
 import { addDays, diffDays, startOfWeek, type ISODate } from "@/lib/dates";
+import { goalContext, goalsOf } from "@/lib/goals";
 import { DEFAULT_THRESHOLDS } from "@/lib/workout/types";
 import { todayFor } from "./sync";
 import { recoveryFor, wellnessBetween } from "./wellness";
@@ -223,6 +224,8 @@ export function trainingContext(user: User): string {
 
   const lines: string[] = [];
   lines.push(`Heute: ${today}`);
+  const goals = goalContext(goalsOf(user.goals), user.goalNote);
+  if (goals) lines.push(goals);
   lines.push(`Schwellen: FTP ${user.ftp} W, Schwellenpuls ${user.lthr} bpm, Maximalpuls ${user.maxHr} bpm, Ruhepuls ${user.restHr} bpm, Schwellenpace ${Math.floor(user.thresholdPace / 60)}:${String(user.thresholdPace % 60).padStart(2, "0")} min/km${user.weightKg ? `, Gewicht ${user.weightKg} kg` : ""}`);
   if (now) {
     lines.push(`Fitness (CTL) ${now.ctl}, Ermüdung (ATL) ${now.atl}, Form (TSB) ${now.tsb}; CTL vor 7 Tagen ${weekAgo?.ctl ?? "?"}`);
@@ -262,5 +265,15 @@ export function trainingContext(user: User): string {
   lines.push("Geplant (nächste 14 Tage):");
   if (!upcoming.length) lines.push("- nichts geplant");
   for (const u of upcoming) lines.push(`- ${u.scheduled.date} ${u.workout.sport} „${u.workout.name}“ ${Math.round(u.workout.durationSec / 60)} min, TSS ${u.workout.tss} (${u.scheduled.status})`);
+  const fixed = getDb()
+    .select()
+    .from(calendarEntries)
+    .where(and(eq(calendarEntries.userId, user.id), gte(calendarEntries.date, today), lte(calendarEntries.date, addDays(today, 13)), eq(calendarEntries.status, "planned")))
+    .orderBy(asc(calendarEntries.date))
+    .all();
+  if (fixed.length) {
+    lines.push("Feste Termine ohne Workout (nächste 14 Tage, beim Planen berücksichtigen):");
+    for (const e of fixed) lines.push(`- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.sport} „${e.name}“ ${e.durationMin} min${e.rpe ? `, erwartete RPE ${e.rpe}` : ""}`);
+  }
   return lines.join("\n");
 }

@@ -68,7 +68,20 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-export function CoachView({ messages, thresholds, engine, initialTab }: { messages: CoachMsg[]; thresholds: Thresholds; engine: "ai" | "rules"; initialTab: "chat" | "plan" }) {
+export function CoachView({
+  messages,
+  thresholds,
+  engine,
+  initialTab,
+  planDefaults = { goal: "", strength: true },
+}: {
+  messages: CoachMsg[];
+  thresholds: Thresholds;
+  engine: "ai" | "rules";
+  initialTab: "chat" | "plan";
+  /** Prefill of the plan assistant from the athlete's goals. */
+  planDefaults?: { goal: string; strength: boolean };
+}) {
   const router = useRouter();
   const toast = useToast();
   const [tab, setTab] = useState<"chat" | "plan">(initialTab);
@@ -125,6 +138,7 @@ export function CoachView({ messages, thresholds, engine, initialTab }: { messag
 
       {tab === "plan" ? (
         <PlanForm
+          defaults={planDefaults}
           onSubmit={(input) =>
             new Promise<void>((resolve) => {
               setPendingText("Erstelle mir einen Trainingsplan …");
@@ -394,8 +408,8 @@ function PlanProposalCard({ messageId, payload, thresholds }: { messageId: strin
 
 const DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
-function PlanForm({ onSubmit }: { onSubmit: (input: Parameters<typeof requestPlan>[0]) => Promise<void> }) {
-  const [goal, setGoal] = useState("");
+function PlanForm({ defaults, onSubmit }: { defaults: { goal: string; strength: boolean }; onSubmit: (input: Parameters<typeof requestPlan>[0]) => Promise<void> }) {
+  const [goal, setGoal] = useState(defaults.goal);
   const [sport, setSport] = useState<"ride" | "run" | "mixed">("run");
   const [hasEvent, setHasEvent] = useState(true);
   const [eventDate, setEventDate] = useState(addDays(toISODate(new Date()), 84));
@@ -403,7 +417,7 @@ function PlanForm({ onSubmit }: { onSubmit: (input: Parameters<typeof requestPla
   const [hours, setHours] = useState("6");
   const [days, setDays] = useState<number[]>([1, 3, 5, 6]);
   const [longDay, setLongDay] = useState(6);
-  const [strength, setStrength] = useState(true);
+  const [strength, setStrength] = useState(defaults.strength);
   const [busy, setBusy] = useState(false);
 
   const toggleDay = (d: number) => setDays((ds) => (ds.includes(d) ? ds.filter((x) => x !== d) : [...ds, d].sort()));

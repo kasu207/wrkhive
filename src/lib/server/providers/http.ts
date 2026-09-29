@@ -26,7 +26,12 @@ export async function providerFetch(provider: string, url: string, init: Request
 
 /** Returns the UTC instant of local noon on a calendar day in a time zone. */
 export function localNoonInstant(date: string, timeZone: string): Date {
-  const nominal = Date.parse(`${date}T12:00:00Z`);
+  return localInstant(date, "12:00", timeZone);
+}
+
+/** Returns the UTC instant of a local wall-clock time (HH:MM) on a calendar day in a time zone. */
+export function localInstant(date: string, time: string, timeZone: string): Date {
+  const nominal = Date.parse(`${date}T${time}:00Z`);
   let fmt: Intl.DateTimeFormat;
   try {
     fmt = new Intl.DateTimeFormat("en-CA", {

@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { AppShell } from "@/components/app-shell";
 import { requireUser } from "@/lib/server/auth";
+import { dueEntries } from "@/lib/server/entries";
 import { staleConnections, syncConnection } from "@/lib/server/sync";
 
 const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000;
@@ -17,7 +18,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   }
 
   return (
-    <AppShell user={{ name: user.name, email: user.email }} demo={user.isDemo}>
+    <AppShell user={{ name: user.name, email: user.email }} demo={user.isDemo} badges={{ "/calendar": dueEntries(user).length }}>
       {children}
     </AppShell>
   );

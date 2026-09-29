@@ -37,6 +37,10 @@ export const users = sqliteTable(
     appleHealthLastAt: integer("apple_health_last_at", { mode: "timestamp_ms" }),
     /** Widgets on the athlete's dashboard in display order; null = default layout (lib/dashboard.ts). */
     dashboard: text("dashboard", { mode: "json" }).$type<DashboardLayout>(),
+    /** Training goals, main goal first (lib/goals.ts). */
+    goals: text("goals", { mode: "json" }).$type<string[]>(),
+    /** The goal in the athlete's own words, e.g. "Marathon unter 3:30". */
+    goalNote: text("goal_note"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_apple_health_key_idx").on(t.appleHealthKeyHash)],
@@ -135,6 +139,41 @@ export const scheduledWorkouts = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [index("scheduled_user_date_idx").on(t.userId, t.date)],
+);
+
+/**
+ * Sessions planned without a structured workout (Jiu-Jitsu, gym, a group
+ * ride). Once the day has passed the athlete confirms and rates them, which
+ * records a manual activity; a synced activity of the same sport on that day
+ * takes precedence and replaces the manual record.
+ */
+export const calendarEntries = sqliteTable(
+  "calendar_entries",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    /** Local start time HH:MM, optional. */
+    time: text("time"),
+    name: text("name").notNull(),
+    sport: text("sport", { enum: ["ride", "run", "strength", "other"] }).notNull(),
+    durationMin: integer("duration_min").notNull(),
+    /** Expected Session-RPE 1-10 (planned load); the rating on confirmation replaces it. */
+    rpe: integer("rpe"),
+    note: text("note"),
+    status: text("status", { enum: ["planned", "done", "skipped"] })
+      .notNull()
+      .default("planned"),
+    activityId: text("activity_id"),
+    /** How the entry was completed: rated by the athlete (manual activity) or matched with a synced activity. */
+    completion: text("completion", { enum: ["rated", "synced"] }),
+    /** Entries created together as a weekly series. */
+    seriesId: text("series_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("calendar_entries_user_date_idx").on(t.userId, t.date)],
 );
 
 export const deviceConnections = sqliteTable(
@@ -332,3 +371,4 @@ export type TrainingPlan = typeof trainingPlans.$inferSelect;
 export type Delivery = typeof deliveries.$inferSelect;
 export type CoachMessage = typeof coachMessages.$inferSelect;
 export type Wellness = typeof wellness.$inferSelect;
+export type CalendarEntry = typeof calendarEntries.$inferSelect;

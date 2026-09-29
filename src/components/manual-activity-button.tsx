@@ -11,7 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { RPE_TSS_PER_HOUR } from "@/lib/analytics/load";
 
 /** Session-RPE after Foster (CR-10). */
-const RPE_LABEL: Record<number, string> = {
+export const RPE_LABEL: Record<number, string> = {
   1: "Sehr leicht",
   2: "Leicht",
   3: "Moderat",

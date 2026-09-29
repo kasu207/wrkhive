@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { deviceConnections, users } from "@/db/schema";
+import { GOAL_IDS, MAX_GOALS, type GoalId } from "@/lib/goals";
 import { destroySession, requireUser } from "@/lib/server/auth";
 import { decrypt } from "@/lib/server/crypto";
 import { PROVIDERS } from "@/lib/server/sync";
@@ -87,4 +88,24 @@ export async function setBaselineHours(hours: number | null): Promise<ActionResu
   getDb().update(users).set({ baselineWeeklyHours: parsed.data === null ? null : Math.round(parsed.data * 2) / 2 }).where(eq(users.id, user.id)).run();
   revalidatePath("/", "layout");
   return { ok: true, message: parsed.data === null ? "Startwert entfernt." : "Fitness und Form wurden neu berechnet." };
+}
+
+const goalsInput = z.object({
+  goals: z.array(z.enum(GOAL_IDS as [GoalId, ...GoalId[]])).max(MAX_GOALS, `Höchstens ${MAX_GOALS} Ziele.`),
+  note: z.string().trim().max(120, "Höchstens 120 Zeichen."),
+});
+
+/** Training goals, main goal first; they steer the coach and new plans. */
+export async function updateGoals(input: z.input<typeof goalsInput>): Promise<ActionResult> {
+  const user = await requireUser();
+  const parsed = goalsInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+  getDb()
+    .update(users)
+    .set({ goals: [...new Set(parsed.data.goals)], goalNote: parsed.data.note || null })
+    .where(eq(users.id, user.id))
+    .run();
+  revalidatePath("/settings");
+  revalidatePath("/coach");
+  return { ok: true, message: "Coach und neue Pläne richten sich danach." };
 }

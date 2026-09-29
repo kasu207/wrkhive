@@ -10,6 +10,7 @@ import { summarize } from "../workout/metrics";
 import { TEMPLATES } from "../workout/templates";
 import { parseWorkoutText } from "../workout/text";
 import type { Sport, Thresholds, WorkoutStructure } from "../workout/types";
+import type { GoalId } from "../goals";
 import type { PlanProposal, PlanWeek, PlannedSession } from "./types";
 
 export type Focus = "recovery" | "endurance" | "tempo" | "threshold" | "vo2" | "anaerobic" | "strength-legs" | "strength-upper" | "strength-full";
@@ -207,6 +208,8 @@ export interface PlanRequest {
   longDay: number;
   strength: boolean;
   startDate: ISODate;
+  /** The athlete's training goals, main goal first (profile). */
+  goals?: GoalId[];
 }
 
 type Phase = PlanWeek["phase"];
@@ -264,14 +267,21 @@ function sessionSpecs(req: PlanRequest, phase: Phase, weekIndex: number): Sessio
   const endurance: Sport[] = req.sport === "mixed" ? ["ride", "run"] : [req.sport === "strength" ? "ride" : req.sport];
   const sportAt = (i: number) => endurance[i % endurance.length];
 
+  const main = req.goals?.[0];
+  // Health and weight loss: moderate intensity instead of VO2max blocks (unless racing is also a goal).
+  const gentle = (main === "health" || main === "weight") && !req.goals?.includes("performance");
   // Key sessions by phase.
   const keys: Focus[] =
     phase === "base"
       ? ["tempo"]
       : phase === "build"
-        ? ["threshold", "vo2"]
+        ? gentle
+          ? ["threshold", "tempo"]
+          : ["threshold", "vo2"]
         : phase === "peak"
-          ? ["vo2", "threshold"]
+          ? gentle
+            ? ["tempo", "threshold"]
+            : ["vo2", "threshold"]
           : phase === "taper"
             ? ["vo2"]
             : phase === "race"
@@ -281,7 +291,9 @@ function sessionSpecs(req: PlanRequest, phase: Phase, weekIndex: number): Sessio
   const specs: SessionSpec[] = [];
   // Spread key sessions over non-adjacent days where possible.
   const keyDays = pickSpread(others, keys.length);
-  let strengthLeft = req.strength && phase !== "race" && phase !== "taper" ? (phase === "base" ? 2 : 1) : 0;
+  // Muscle gain as a goal: one strength session more per week.
+  const extraStrength = req.goals?.includes("muscle") ? 1 : 0;
+  let strengthLeft = req.strength && phase !== "race" && phase !== "taper" ? (phase === "base" ? 2 : 1) + extraStrength : 0;
 
   others.forEach((d, i) => {
     const k = keyDays.indexOf(d);

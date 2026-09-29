@@ -8,7 +8,7 @@ import { coachMessages, scheduledWorkouts, trainingPlans, workouts } from "@/db/
 import { addDays, isISODate } from "@/lib/dates";
 import { newId } from "@/lib/id";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
-import { clearCoachHistory, handleCoachMessage, handlePlanRequest } from "@/lib/server/coach";
+import { clearCoachHistory, generateWorkoutDraft, handleCoachMessage, handlePlanRequest, type WorkoutDraft } from "@/lib/server/coach";
 import { summarize } from "@/lib/workout/metrics";
 import type { ActionResult } from "./workouts";
 
@@ -41,6 +41,23 @@ export async function requestPlan(input: z.input<typeof planInput>): Promise<Act
   await handlePlanRequest(user, parsed.data);
   revalidatePath("/coach");
   return { ok: true };
+}
+
+const draftInput = z.object({
+  sport: z.enum(["ride", "run", "strength"]),
+  focus: z.enum(["auto", "recovery", "endurance", "tempo", "threshold", "vo2", "anaerobic", "strength-legs", "strength-upper", "strength-full"]),
+  minutes: z.number().int().min(20).max(360),
+  note: z.string().trim().max(300).default(""),
+});
+
+/** Generates a workout for the builder; nothing is saved. */
+export async function generateBuilderWorkout(input: z.input<typeof draftInput>): Promise<ActionResult<WorkoutDraft>> {
+  const user = await requireUser();
+  const parsed = draftInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Ungültige Angaben." };
+  const { sport, focus } = parsed.data;
+  if ((sport === "strength") !== focus.startsWith("strength") && focus !== "auto") return { ok: false, error: "Schwerpunkt passt nicht zur Sportart." };
+  return { ok: true, data: await generateWorkoutDraft(user, parsed.data) };
 }
 
 export async function clearCoach(): Promise<ActionResult> {

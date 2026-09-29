@@ -1,0 +1,1 @@
+ALTER TABLE `activities` ADD `rpe` integer;

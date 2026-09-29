@@ -203,7 +203,9 @@ export const activities = sqliteTable(
     avgSpeed: real("avg_speed"),
     calories: integer("calories"),
     tss: real("tss"),
-    tssMethod: text("tss_method", { enum: ["power", "pace", "hr", "estimate"] }),
+    tssMethod: text("tss_method", { enum: ["power", "pace", "hr", "rpe", "estimate"] }),
+    /** Session-RPE 1-10, nur bei manuell erfassten Einheiten. */
+    rpe: integer("rpe"),
     /** Seconds per heart-rate zone 1..5 when available. */
     hrZoneSec: text("hr_zone_sec", { mode: "json" }).$type<number[]>(),
     vo2maxEst: real("vo2max_est"),

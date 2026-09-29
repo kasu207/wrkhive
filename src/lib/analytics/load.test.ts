@@ -14,6 +14,16 @@ describe("activity load", () => {
     expect(activityLoad({ sport: "ride", durationSec: 3600, avgHr: 170 }, M)).toMatchObject({ tss: 100, method: "hr" });
     expect(activityLoad({ sport: "strength", durationSec: 3600 }, M).method).toBe("estimate");
   });
+  it("uses Session-RPE times duration for sessions without sensor data", () => {
+    expect(activityLoad({ sport: "other", durationSec: 3600, rpe: 4 }, M)).toMatchObject({ tss: 50, method: "rpe" });
+    expect(activityLoad({ sport: "other", durationSec: 1800, rpe: 6 }, M).tss).toBe(35);
+    expect(activityLoad({ sport: "other", durationSec: 5400, rpe: 7 }, M).tss).toBe(120);
+  });
+  it("prefers heart rate over RPE and ignores RPE outside 1-10", () => {
+    expect(activityLoad({ sport: "other", durationSec: 3600, avgHr: 170, rpe: 4 }, M).method).toBe("hr");
+    expect(activityLoad({ sport: "other", durationSec: 3600, rpe: 0 }, M).method).toBe("estimate");
+    expect(activityLoad({ sport: "other", durationSec: 3600, rpe: 11 }, M).method).toBe("estimate");
+  });
 });
 
 describe("PMC", () => {

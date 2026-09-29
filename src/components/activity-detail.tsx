@@ -1,10 +1,15 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { deleteManualActivity } from "@/app/actions/activities";
 import { ZoneBars } from "@/components/charts/zone-bars";
 import { SportTile } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import type { Activity } from "@/db/schema";
 import { formatDistance, formatDuration, formatNumber, formatPace, formatSpeedKmh } from "@/lib/format";
 import { SOURCE_APP_LABEL, type SourceAppId } from "@/lib/apps";
@@ -13,11 +18,25 @@ const METHOD: Record<string, string> = {
   power: "aus Leistung (NP / FTP)",
   pace: "aus Pace (rTSS)",
   hr: "aus Herzfrequenz (hrTSS)",
+  rpe: "aus Session-RPE (Dauer × Anstrengung)",
   estimate: "geschätzt aus Dauer",
 };
 
 export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Activity; closeHref: string; lthr: number }) {
   const router = useRouter();
+  const toast = useToast();
+  const [deleting, startDelete] = useTransition();
+  const manual = a.provider === "manual" && a.sourceApp === "manual";
+  const remove = () => {
+    if (!window.confirm(`„${a.name}“ löschen?`)) return;
+    startDelete(async () => {
+      const r = await deleteManualActivity(a.id);
+      if (!r.ok) return toast({ tone: "error", title: "Löschen fehlgeschlagen", description: r.error });
+      toast({ tone: "success", title: "Einheit gelöscht" });
+      router.push(closeHref, { scroll: false });
+      router.refresh();
+    });
+  };
   const moving = a.movingSec ?? a.durationSec;
   const metrics: [string, string][] = [["Dauer", formatDuration(a.durationSec)]];
   if (a.movingSec && a.movingSec !== a.durationSec) metrics.push(["Bewegungszeit", formatDuration(a.movingSec)]);
@@ -30,6 +49,7 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
   if (a.avgHr) metrics.push(["Ø Puls", `${a.avgHr} bpm${lthr ? ` (${Math.round((a.avgHr / lthr) * 100)} % LTHR)` : ""}`]);
   if (a.maxHr) metrics.push(["Max. Puls", `${a.maxHr} bpm`]);
   if (a.avgCadence) metrics.push([a.sport === "run" ? "Schrittfrequenz" : "Trittfrequenz", `${a.avgCadence} ${a.sport === "run" ? "spm" : "rpm"}`]);
+  if (a.rpe) metrics.push(["Anstrengung (RPE)", `${a.rpe} / 10`]);
   if (a.calories) metrics.push(["Kalorien", `${formatNumber(a.calories, 0)} kcal`]);
   if (a.vo2maxEst) metrics.push(["VO2max (effektiv)", formatNumber(a.vo2maxEst, 1)]);
 
@@ -40,6 +60,14 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
       title={a.name}
       description={new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(a.startTime)}
       size="lg"
+      footer={
+        manual ? (
+          <Button variant="ghost" onClick={remove} loading={deleting} className="mr-auto text-critical-ink hover:bg-critical-soft hover:text-critical-ink">
+            {deleting ? null : <Trash2 />}
+            Löschen
+          </Button>
+        ) : undefined
+      }
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SportTile sport={a.sport} size="sm" />
@@ -50,9 +78,9 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
         ) : null}
         {a.sourceApp && a.sourceApp in SOURCE_APP_LABEL ? <Badge tone="info">{SOURCE_APP_LABEL[a.sourceApp as SourceAppId]}</Badge> : null}
         {a.deviceName && a.deviceName !== (a.sourceApp ? SOURCE_APP_LABEL[a.sourceApp as SourceAppId] : null) ? <Badge>{a.deviceName}</Badge> : null}
-        <Badge>über {a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : a.provider === "intervals" ? "intervals.icu" : "Datei-Import"}</Badge>
+        {a.sourceApp === "manual" ? null : <Badge>über {a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : a.provider === "intervals" ? "intervals.icu" : "Datei-Import"}</Badge>}
       </div>
-      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
+      <dl className={`grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border ${metrics.length > 2 ? "sm:grid-cols-3" : ""}`}>
         {metrics.map(([k, v]) => (
           <div key={k} className="bg-surface px-4 py-3">
             <dt className="text-[12px] text-ink-3">{k}</dt>

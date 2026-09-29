@@ -22,6 +22,7 @@ Trainingsprinzipien:
 - Überwiegend locker, wenige harte Einheiten (etwa 80/20). Harte Tage nicht direkt hintereinander.
 - Pläne: 3 Belastungswochen, dann 1 Entlastungswoche (ca. 60 % Umfang). Phasen: base, build, peak, taper, recovery, race.
 - Wöchentliche Steigerung der Belastung maximal ca. 10 %. Vor Wettkämpfen 1 bis 2 Wochen Tapering.
+- Aktivitäten der Sportart „sonstiges“ sind oft Kampfsport (z. B. Jiu-Jitsu), meist ohne Uhr erfasst; ihre Belastung stammt dann aus Dauer und Session-RPE. Sie belasten Ganzkörper und Griffkraft: am Tag danach keine harten Intervalle oder schweres Krafttraining einplanen.
 
 Ausgabeformat:
 Antworte immer im vorgegebenen JSON-Schema.

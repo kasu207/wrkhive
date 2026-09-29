@@ -2,7 +2,8 @@
  * Training load and performance models.
  *
  * - TSS per activity: power-based (TSS), pace-based (rTSS), heart-rate based
- *   (hrTSS approximation) or a duration estimate as last resort.
+ *   (hrTSS approximation), Session-RPE for sessions recorded without a
+ *   device, or a duration estimate as last resort.
  * - Performance Management Chart: CTL (42 d), ATL (7 d) exponentially weighted
  *   daily load, TSB = CTL - ATL of the previous day (form going into today).
  * - Effective VO2max from runs (Daniels/Gilbert oxygen cost, corrected for the
@@ -18,6 +19,8 @@ export interface LoadInput {
   avgHr?: number | null;
   avgPower?: number | null;
   normPower?: number | null;
+  /** Session-RPE (Foster CR-10, 1-10), only for manually recorded sessions. */
+  rpe?: number | null;
 }
 
 export interface AthleteModel {
@@ -28,7 +31,16 @@ export interface AthleteModel {
   thresholdPace: number; // s/km
 }
 
-export function activityLoad(a: LoadInput, m: AthleteModel): { tss: number; method: "power" | "pace" | "hr" | "estimate"; intensityFactor: number | null } {
+/**
+ * TSS per hour for a Session-RPE (Foster CR-10). Anchored at Friel's scale
+ * (RPE 4 = 50, RPE 6 = 70 TSS/h); values above RPE 6 are an assumption and
+ * capped at threshold (100 TSS/h), since a whole session cannot be held above it.
+ */
+export const RPE_TSS_PER_HOUR: Record<number, number> = { 1: 20, 2: 30, 3: 40, 4: 50, 5: 60, 6: 70, 7: 80, 8: 90, 9: 100, 10: 100 };
+
+export type LoadMethod = "power" | "pace" | "hr" | "rpe" | "estimate";
+
+export function activityLoad(a: LoadInput, m: AthleteModel): { tss: number; method: LoadMethod; intensityFactor: number | null } {
   const sec = a.movingSec && a.movingSec > 0 ? a.movingSec : a.durationSec;
   const hours = sec / 3600;
   if (hours <= 0) return { tss: 0, method: "estimate", intensityFactor: null };
@@ -48,6 +60,10 @@ export function activityLoad(a: LoadInput, m: AthleteModel): { tss: number; meth
   if (a.avgHr && m.lthr > m.restHr && a.sport !== "strength") {
     const intensity = Math.max(0, (a.avgHr - m.restHr) / (m.lthr - m.restHr));
     return { tss: round1(hours * intensity * intensity * 100), method: "hr", intensityFactor: round2(intensity) };
+  }
+  if (a.rpe && Number.isInteger(a.rpe) && a.rpe >= 1 && a.rpe <= 10) {
+    const perHour = RPE_TSS_PER_HOUR[a.rpe];
+    return { tss: round1(hours * perHour), method: "rpe", intensityFactor: round2(Math.sqrt(perHour / 100)) };
   }
   const assumed = a.sport === "strength" ? 0.62 : 0.7;
   return { tss: round1(hours * assumed * assumed * 100), method: "estimate", intensityFactor: assumed };

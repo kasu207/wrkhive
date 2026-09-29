@@ -16,7 +16,7 @@
  *    intervals.icu
  */
 
-export const SOURCE_APPS = ["garmin", "wahoo", "zwift", "mywhoosh", "rouvy", "freeletics", "apple", "coros", "polar", "suunto", "strava", "file", "demo"] as const;
+export const SOURCE_APPS = ["garmin", "wahoo", "zwift", "mywhoosh", "rouvy", "freeletics", "apple", "coros", "polar", "suunto", "strava", "file", "manual", "demo"] as const;
 export type SourceAppId = (typeof SOURCE_APPS)[number];
 
 export const SOURCE_APP_LABEL: Record<SourceAppId, string> = {
@@ -32,6 +32,7 @@ export const SOURCE_APP_LABEL: Record<SourceAppId, string> = {
   suunto: "Suunto",
   strava: "Strava",
   file: "Datei",
+  manual: "Manuell",
   demo: "Demo",
 };
 

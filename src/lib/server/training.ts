@@ -139,15 +139,15 @@ export function trainingContext(user: User): string {
   if (readiness) lines.push(`Bereitschaft: ${readiness.label} (Form ${readiness.formPct} % der Fitness, Rampe ${readiness.ramp} CTL/Woche). ${readiness.advice}`);
   if (fitness) lines.push(`Lauf-VO2max (effektiv) ${fitness.vo2max}`);
   lines.push(
-    `Wochenumfang der letzten 6 Wochen (h Rad/Lauf/Kraft, TSS): ${weeks
-      .map((w) => `${w.week}: ${w.ride.toFixed(1)}/${w.run.toFixed(1)}/${w.strength.toFixed(1)}, ${Math.round(w.tss)}`)
+    `Wochenumfang der letzten 6 Wochen (h Rad/Lauf/Kraft/Sonstiges, TSS): ${weeks
+      .map((w) => `${w.week}: ${w.ride.toFixed(1)}/${w.run.toFixed(1)}/${w.strength.toFixed(1)}/${w.other.toFixed(1)}, ${Math.round(w.tss)}`)
       .join("; ")}`,
   );
   lines.push("Letzte 14 Tage:");
   if (!recent.length) lines.push("- keine Aktivitäten");
   for (const a of recent) {
     lines.push(
-      `- ${a.date} ${a.sport} „${a.name}“ ${Math.round(a.durationSec / 60)} min${a.distanceM ? `, ${(a.distanceM / 1000).toFixed(1)} km` : ""}${a.tss ? `, TSS ${Math.round(a.tss)}` : ""}${a.avgHr ? `, Ø ${a.avgHr} bpm` : ""}${a.normPower ? `, NP ${a.normPower} W` : ""}`,
+      `- ${a.date} ${a.sport === "other" ? "sonstiges" : a.sport} „${a.name}“ ${Math.round(a.durationSec / 60)} min${a.distanceM ? `, ${(a.distanceM / 1000).toFixed(1)} km` : ""}${a.tss ? `, TSS ${Math.round(a.tss)}` : ""}${a.avgHr ? `, Ø ${a.avgHr} bpm` : ""}${a.normPower ? `, NP ${a.normPower} W` : ""}${a.rpe ? `, RPE ${a.rpe}/10` : ""}`,
     );
   }
   lines.push("Geplant (nächste 14 Tage):");

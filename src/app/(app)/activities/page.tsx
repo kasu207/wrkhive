@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ActivityDetail } from "@/components/activity-detail";
 import { ActivityRow } from "@/components/activity-row";
 import { ImportButton } from "@/components/import-button";
+import { ManualActivityButton } from "@/components/manual-activity-button";
 import { SportIcon } from "@/components/brand";
 import { ButtonLink } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
@@ -22,12 +23,13 @@ const FILTERS = [
   { value: "ride", label: "Rad" },
   { value: "run", label: "Laufen" },
   { value: "strength", label: "Kraft" },
+  { value: "other", label: "Sonstiges" },
 ] as const;
 
 export default async function ActivitiesPage(props: PageProps<"/activities">) {
   const user = await requireUser();
   const sp = await props.searchParams;
-  const sport = typeof sp.sport === "string" && ["ride", "run", "strength"].includes(sp.sport) ? (sp.sport as "ride" | "run" | "strength") : null;
+  const sport = typeof sp.sport === "string" && ["ride", "run", "strength", "other"].includes(sp.sport) ? (sp.sport as "ride" | "run" | "strength" | "other") : null;
   const app = typeof sp.app === "string" && (SOURCE_APPS as readonly string[]).includes(sp.app) ? (sp.app as SourceAppId) : null;
   const limit = Math.min(2000, Math.max(50, Number(sp.limit) || 100));
   const db = getDb();
@@ -73,7 +75,12 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
       <PageHeader
         title="Aktivitäten"
         description="Alles, was deine Geräte aufgezeichnet haben, mit Belastung und Kennzahlen."
-        actions={<ImportButton />}
+        actions={
+          <>
+            <ManualActivityButton />
+            <ImportButton />
+          </>
+        }
       />
       <div className="mb-5 flex flex-wrap gap-2">
         {FILTERS.map((f) => {
@@ -148,11 +155,12 @@ export default async function ActivitiesPage(props: PageProps<"/activities">) {
         <Card>
           <EmptyState
             title={sport || app ? "Keine passenden Aktivitäten" : "Noch keine Aktivitäten"}
-            description="Verbinde deine Geräte und Apps für den Dauer-Sync oder importiere FIT-Dateien direkt von Uhr und Radcomputer."
+            description="Verbinde deine Geräte und Apps für den Dauer-Sync importiere FIT-Dateien direkt von Uhr und Radcomputer oder erfasse Einheiten ohne Uhr von Hand."
             action={
               <div className="flex flex-wrap justify-center gap-2">
                 <ButtonLink href="/devices">Gerät verbinden</ButtonLink>
                 <ImportButton />
+                <ManualActivityButton />
               </div>
             }
           />

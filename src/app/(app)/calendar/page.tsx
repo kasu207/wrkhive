@@ -3,6 +3,7 @@ import { MessageSquare } from "lucide-react";
 import type { Metadata } from "next";
 import { CalendarView } from "@/components/calendar/calendar-view";
 import { ButtonLink } from "@/components/ui/button";
+import { ManualActivityButton } from "@/components/manual-activity-button";
 import { PageHeader } from "@/components/ui/card";
 import { getDb } from "@/db";
 import { deviceConnections, trainingPlans, workouts } from "@/db/schema";
@@ -52,10 +53,13 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
         title="Kalender"
         description="Plane deine Woche, verschiebe Einheiten und sieh, was du tatsächlich trainiert hast."
         actions={
-          <ButtonLink href="/coach?tab=plan" variant="secondary">
-            <MessageSquare />
-            Trainingsplan erstellen
-          </ButtonLink>
+          <>
+            <ManualActivityButton />
+            <ButtonLink href="/coach?tab=plan" variant="secondary">
+              <MessageSquare />
+              Trainingsplan erstellen
+            </ButtonLink>
+          </>
         }
       />
       <CalendarView

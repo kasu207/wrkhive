@@ -16,6 +16,7 @@ import { SendDialog, type ConnectionInfo } from "@/components/workout/send-dialo
 import { WorkoutChart } from "@/components/workout/workout-chart";
 import { cn } from "@/lib/cn";
 import { addDays, displayDate, isoWeekNumber } from "@/lib/dates";
+import { ManualActivityDialog } from "@/components/manual-activity-button";
 import { formatDateShort, formatDayLong, formatDuration } from "@/lib/format";
 import type { Sport, Thresholds, WorkoutStructure } from "@/lib/workout/types";
 
@@ -87,6 +88,7 @@ export function CalendarView({
   const [dropDay, setDropDay] = useState<string | null>(null);
   const [detail, setDetail] = useState<CalWorkout | null>(null);
   const [addDay, setAddDay] = useState<string | null>(null);
+  const [recordDay, setRecordDay] = useState<string | null>(null);
   const [sendItem, setSendItem] = useState<CalWorkout | null>(null);
   const [optimistic, setOptimistic] = useState<Record<string, string>>({});
 
@@ -225,7 +227,7 @@ export function CalendarView({
                           type="button"
                           onClick={() => setAddDay(day)}
                           className="grid size-6 place-items-center rounded-md text-ink-3 opacity-100 transition-opacity hover:bg-surface-2 hover:text-ink lg:opacity-0 lg:group-hover/day:opacity-100 lg:focus:opacity-100"
-                          aria-label={`Workout am ${formatDayLong(displayDate(day))} planen`}
+                          aria-label={past || isToday ? `Workout planen oder Aktivität nachtragen am ${formatDayLong(displayDate(day))}` : `Workout am ${formatDayLong(displayDate(day))} planen`}
                         >
                           <Plus className="size-4" />
                         </button>
@@ -398,14 +400,21 @@ export function CalendarView({
 
       <AddDialog
         day={addDay}
+        today={today}
         library={library}
         onClose={() => setAddDay(null)}
+        onRecord={() => {
+          const day = addDay!;
+          setAddDay(null);
+          setRecordDay(day);
+        }}
         onPick={(id) => {
           const day = addDay!;
           setAddDay(null);
           act(() => scheduleWorkout(id, day), "Eingeplant");
         }}
       />
+      <ManualActivityDialog open={!!recordDay} day={recordDay} onClose={() => setRecordDay(null)} />
     </div>
   );
 }
@@ -426,11 +435,40 @@ function WeekFigure({ label, sec, tss }: { label: string; sec?: number; tss: num
   );
 }
 
-function AddDialog({ day, library, onClose, onPick }: { day: string | null; library: LibraryOption[]; onClose: () => void; onPick: (id: string) => void }) {
+function AddDialog({
+  day,
+  today,
+  library,
+  onClose,
+  onPick,
+  onRecord,
+}: {
+  day: string | null;
+  today: string;
+  library: LibraryOption[];
+  onClose: () => void;
+  onPick: (id: string) => void;
+  onRecord: () => void;
+}) {
   const [q, setQ] = useState("");
   const list = library.filter((l) => !q.trim() || l.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 60);
   return (
-    <Dialog open={!!day} onClose={onClose} title="Workout einplanen" description={day ? formatDayLong(displayDate(day)) : undefined}>
+    <Dialog open={!!day} onClose={onClose} title={day && day < today ? "Tag bearbeiten" : "Workout einplanen"} description={day ? formatDayLong(displayDate(day)) : undefined}>
+      {day && day <= today ? (
+        <button
+          type="button"
+          onClick={onRecord}
+          className="mb-4 flex w-full items-center gap-3 rounded-xl border border-border-strong bg-surface px-3.5 py-3 text-left hover:bg-surface-2"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
+            <Plus className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">Aktivität nachtragen</span>
+            <span className="block text-[12px] text-ink-3">Einheit ohne Uhr, z. B. Jiu-Jitsu, mit Dauer und Anstrengung</span>
+          </span>
+        </button>
+      ) : null}
       <div className="relative mb-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" />
         <Input autoFocus placeholder="In deiner Bibliothek suchen" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />

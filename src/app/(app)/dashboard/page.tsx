@@ -72,6 +72,10 @@ export default async function DashboardPage() {
   for (const a of activitiesBetween(user.id, addDays(today, -27), today)) a.hrZoneSec?.forEach((s, i) => (zoneSec[i] += s));
 
   const hasData = activityCount > 0;
+  // A real athlete with a demo connection sees sample training in fitness and form.
+  const sampleLoad = user.isDemo
+    ? 0
+    : (db.select({ n: count() }).from(activities).where(and(eq(activities.userId, user.id), eq(activities.sourceApp, "demo"), gte(activities.date, addDays(today, -42)))).get()?.n ?? 0);
   // Activation checklist (hidden for the demo and once everything is done).
   const setup = user.isDemo
     ? null
@@ -257,6 +261,15 @@ export default async function DashboardPage() {
                 </span>
               </div>
               <p className="mt-2 text-[14px] leading-relaxed text-ink-2">{form.text}</p>
+              {sampleLoad ? (
+                <p className="mt-2 rounded-lg bg-warning-soft px-3 py-2 text-[13px] leading-relaxed text-warning-ink">
+                  Enthält {sampleLoad} Beispieleinheiten einer Demo-Verbindung.{" "}
+                  <Link href="/devices" className="font-medium underline">
+                    Demo-Verbindung trennen
+                  </Link>{" "}
+                  und dabei die importierten Aktivitäten löschen, damit Fitness und Form nur dein Training zeigen.
+                </p>
+              ) : null}
               <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
                 <MiniStat label="Fitness (CTL)" value={formatNumber(now.ctl, 0)} delta={ctlDelta} deltaLabel="in 7 Tagen" upIsGood />
                 <MiniStat label="Ermüdung (ATL)" value={formatNumber(now.atl, 0)} />

@@ -27,3 +27,12 @@ export function registrationOpen(): boolean {
 export function demoEnabled(): boolean {
   return !["false", "0", "no", "off"].includes((process.env.DEMO_ENABLED ?? "true").trim().toLowerCase());
 }
+
+/**
+ * Simulated provider connections ("Demo ansehen") generate sample training
+ * every day. They must never mix with a real athlete's data on a personal
+ * server, so they are only offered to demo accounts or where the demo is on.
+ */
+export function demoConnectionsAllowed(user: { isDemo: boolean }): boolean {
+  return user.isDemo || demoEnabled();
+}

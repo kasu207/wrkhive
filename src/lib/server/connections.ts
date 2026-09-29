@@ -7,6 +7,7 @@ import { encrypt, pkcePair, randomToken } from "./crypto";
 import { env } from "./env";
 import type { ProviderId, TokenSet } from "./providers/types";
 import { PROVIDERS, syncConnection } from "./sync";
+import { demoConnectionsAllowed } from "./access";
 
 export function redirectUri(provider: ProviderId) {
   return `${env.appUrl()}/api/devices/${provider}/callback`;
@@ -17,6 +18,9 @@ export async function beginConnect(user: User, provider: ProviderId, returnTo: s
   const adapter = PROVIDERS[provider];
   if (adapter.auth !== "oauth") throw new Error(`${adapter.name} wird mit einem API-Schlüssel verbunden.`);
   if (!adapter.isConfigured()) {
+    if (!demoConnectionsAllowed(user)) {
+      throw new Error(`Für diese Installation sind keine ${adapter.name}-API-Zugangsdaten hinterlegt. Workouts und Aktivitäten laufen über intervals.icu.`);
+    }
     await createConnection(user, provider, { mode: "demo" });
     return `/devices?connected=${provider}`;
   }

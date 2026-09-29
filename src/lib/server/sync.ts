@@ -12,6 +12,7 @@ import { garminAdapter } from "./providers/garmin";
 import { intervalsAdapter } from "./providers/intervals";
 import { ProviderError, type NormalizedActivity, type PlannedOnProvider, type ProviderAdapter, type ProviderId } from "./providers/types";
 import { wahooAdapter } from "./providers/wahoo";
+import { demoConnectionsAllowed } from "./access";
 
 export const PROVIDERS: Record<ProviderId, ProviderAdapter> = { garmin: garminAdapter, wahoo: wahooAdapter, intervals: intervalsAdapter };
 
@@ -167,7 +168,8 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
           ),
         )
         .all()
-        .filter((c) => isSameSession(c, a))
+        // Sample data and real recordings never describe the same session.
+        .filter((c) => (c.sourceApp === "demo") === (sourceApp === "demo") && isSameSession(c, a))
         // Closest start first.
         .sort((x, y) => Math.abs(x.startTime.getTime() - a.startTime.getTime()) - Math.abs(y.startTime.getTime() - a.startTime.getTime()))[0];
       if (duplicate) {
@@ -263,6 +265,8 @@ async function runSync(conn: DeviceConnection, opts: { full?: boolean }): Promis
   const now = new Date();
 
   if (conn.mode === "demo") {
+    // Sample training must not reach a real athlete's load where the demo is switched off.
+    if (!demoConnectionsAllowed(user)) return { ok: true, inserted: 0, message: "Demo-Verbindungen sind auf dieser Installation abgeschaltet." };
     // Only one demo source feeds activities, otherwise the demo would double count.
     const other = db
       .select()

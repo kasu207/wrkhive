@@ -40,6 +40,8 @@ const { pmcFor } = await import("./training");
 const { adaptScheduled, autoAdaptToday, readinessFor, restoreScheduled } = await import("./adapt");
 const { importAppleWorkouts, rotateAppleHealthKey, userByAppleHealthKey, revokeAppleHealthKey } = await import("./apple-health");
 const { POST: appleHealthWebhook } = await import("@/app/api/ingest/apple-health/route");
+const { purgeStrayDemoData } = await import("./demo-cleanup");
+const { beginConnect } = await import("./connections");
 
 function makeUser(id: string) {
   const db = getDb();
@@ -411,5 +413,58 @@ describe("Apple Health", () => {
     expect((await webhook(key, payload)).status).toBe(401);
     revokeAppleHealthKey(user.id);
     expect((await webhook(rotated, payload)).status).toBe(401);
+  });
+});
+
+describe("demo data on a personal server", () => {
+  const withDemo = async <T,>(value: string | undefined, fn: () => T | Promise<T>) => {
+    const before = process.env.DEMO_ENABLED;
+    if (value === undefined) delete process.env.DEMO_ENABLED;
+    else process.env.DEMO_ENABLED = value;
+    try {
+      return await fn();
+    } finally {
+      if (before === undefined) delete process.env.DEMO_ENABLED;
+      else process.env.DEMO_ENABLED = before;
+    }
+  };
+  const rows = (userId: string) => getDb().select().from(schema.activities).where(eq(schema.activities.userId, userId)).all();
+
+  it("never merges sample training with a real recording", () => {
+    const user = makeUser("u-demo-merge");
+    const start = new Date("2026-02-10T17:00:00Z");
+    upsertActivities(user, { id: null, provider: "manual" }, [{ externalId: "d1", sport: "ride", name: "Demo", startTime: start, durationSec: 3600, sourceApp: "demo" }]);
+    const r = upsertActivities(user, { id: null, provider: "manual" }, [{ externalId: "r1", sport: "ride", name: "Echt", startTime: start, durationSec: 3600, avgHr: 150, deviceName: "Edge 540" }]);
+    expect(r).toMatchObject({ inserted: 1, merged: 0 });
+  });
+
+  it("does not create demo connections for real accounts when the demo is off", async () => {
+    const user = makeUser("u-demo-off");
+    await withDemo("false", async () => {
+      await expect(beginConnect(user, "garmin")).rejects.toThrow(/intervals\.icu/);
+    });
+    expect(getDb().select().from(schema.deviceConnections).where(eq(schema.deviceConnections.userId, user.id)).all()).toHaveLength(0);
+  });
+
+  it("removes stray sample data and re-reads the real history", async () => {
+    const user = makeUser("u-demo-purge");
+    const demo = await createConnection(user, "garmin", { mode: "demo" });
+    const live = { id: "c-live-purge" };
+    getDb().insert(schema.deviceConnections).values({ id: live.id, userId: user.id, provider: "intervals", mode: "live", lastSyncAt: new Date() }).run();
+    upsertActivities(user, { id: live.id, provider: "intervals" }, [{ externalId: "real-1", sport: "run", name: "Lauf", startTime: new Date("2026-01-05T07:00:00Z"), durationSec: 2400, sourceApp: "garmin" }]);
+    const sample = rows(user.id).filter((a) => a.sourceApp === "demo").length;
+    expect(sample).toBeGreaterThan(100);
+
+    expect(await withDemo(undefined, () => purgeStrayDemoData())).toMatchObject({ users: 0 });
+    // Other accounts in this test database carry demo connections too.
+    const r = await withDemo("false", () => purgeStrayDemoData());
+    expect(r.connections).toBeGreaterThanOrEqual(1);
+    expect(r.activities).toBeGreaterThanOrEqual(sample);
+    expect(rows(user.id).map((a) => a.externalId)).toEqual(["real-1"]);
+    const conns = getDb().select().from(schema.deviceConnections).where(eq(schema.deviceConnections.userId, user.id)).all();
+    expect(conns.map((c) => c.id)).toEqual([live.id]);
+    expect(conns[0].lastSyncAt).toBeNull();
+    expect(demo.id).toBeTruthy();
+    expect(await withDemo("false", () => purgeStrayDemoData())).toMatchObject({ users: 0 });
   });
 });

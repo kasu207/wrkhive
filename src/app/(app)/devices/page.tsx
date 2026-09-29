@@ -10,6 +10,7 @@ import { getDb } from "@/db";
 import { activities, deliveries, deviceConnections } from "@/db/schema";
 import { missingPermissions } from "@/lib/permissions";
 import type { AppInfo } from "@/lib/apps";
+import { demoConnectionsAllowed } from "@/lib/server/access";
 import { isInstallationOwner, requireUser } from "@/lib/server/auth";
 import { redirectUri } from "@/lib/server/connections";
 import { env } from "@/lib/server/env";
@@ -66,6 +67,7 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
       devices: adapter.devices,
       features: [...FEATURES[p]],
       configured: adapter.isConfigured(),
+      demoAllowed: demoConnectionsAllowed(user),
       connection: c
         ? {
             mode: c.mode,

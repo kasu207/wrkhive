@@ -26,6 +26,8 @@ export interface DeviceCardProps {
   devices: string[];
   features: string[];
   configured: boolean;
+  /** Simulated connections are offered (demo accounts, or DEMO_ENABLED). */
+  demoAllowed: boolean;
   connection: null | {
     mode: "live" | "demo";
     status: "connected" | "error" | "revoked";
@@ -39,7 +41,7 @@ export interface DeviceCardProps {
   };
 }
 
-export function DeviceCard({ provider, name, auth, intro, selfService, devices, features, configured, connection: c }: DeviceCardProps) {
+export function DeviceCard({ provider, name, auth, intro, selfService, devices, features, configured, demoAllowed, connection: c }: DeviceCardProps) {
   const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
@@ -213,12 +215,14 @@ export function DeviceCard({ provider, name, auth, intro, selfService, devices, 
               <Button onClick={() => setSetupOpen(true)} className="w-full sm:w-auto">
                 {name} einrichten
               </Button>
-              <Button variant="ghost" onClick={connect} loading={pending}>
-                Demo ansehen
-              </Button>
+              {demoAllowed ? (
+                <Button variant="ghost" onClick={connect} loading={pending}>
+                  Demo ansehen
+                </Button>
+              ) : null}
             </div>
           ) : (
-            <Button onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending && auth !== "apikey"} className="w-full sm:w-auto">
+            <Button onClick={auth === "apikey" ? () => setKeyForm(true) : connect} loading={pending && auth !== "apikey"} disabled={!configured && auth === "oauth" && !demoAllowed} className="w-full sm:w-auto">
               Mit {name} verbinden
             </Button>
           )}
@@ -226,7 +230,9 @@ export function DeviceCard({ provider, name, auth, intro, selfService, devices, 
             <p className="mt-2 text-[12px] leading-relaxed text-ink-3">
               {canSetup
                 ? `Einmalig eine kostenlose persönliche ${name}-App anlegen. ${name} prüft neue Apps, das dauert einige Tage; danach ist dein Konto direkt verbunden.`
-                : `Für diese Installation sind keine ${name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.`}
+                : demoAllowed
+                  ? `Für diese Installation sind keine ${name}-API-Zugangsdaten hinterlegt. Die Verbindung startet im Demo-Modus mit Beispieldaten.`
+                  : `Für diese Installation sind keine ${name}-API-Zugangsdaten hinterlegt. Workouts und Aktivitäten laufen über intervals.icu.`}
             </p>
           ) : null}
           {configured && canSetup && selfService?.source === "ui" ? (

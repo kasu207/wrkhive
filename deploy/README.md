@@ -50,11 +50,11 @@ Host github-wrkhive
   IdentitiesOnly yes
 EOF
 
-git clone -b claude/busy-cray-s2ego9 git@github-wrkhive:kasu207/wrkhive.git /opt/wrkhive
+git clone -b main git@github-wrkhive:kasu207/wrkhive.git /opt/wrkhive
 cd /opt/wrkhive
 ```
 
-(Nach einem Merge nach `main` später einfach `git checkout main` im Ordner.)
+(Eine bestehende Installation auf einem anderen Branch wechselt mit `git fetch && git checkout main` im Ordner.)
 
 ## 4. Konfiguration
 

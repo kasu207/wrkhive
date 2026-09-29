@@ -17,6 +17,7 @@ const input = z.object({
   ftp: z.number().int().min(50).max(600).nullable(),
   lthr: z.number().int().min(100).max(220).nullable(),
   thresholdPace: z.number().int().min(120).max(720).nullable(),
+  baselineWeeklyHours: z.number().min(0).max(40).nullable().default(null),
   autoAdapt: z.boolean(),
 });
 
@@ -31,7 +32,7 @@ export async function completeOnboarding(values: z.input<typeof input>): Promise
   const next = { ftp: v.ftp ?? user.ftp, lthr, maxHr: user.maxHr, restHr: user.restHr, thresholdPace: v.thresholdPace ?? user.thresholdPace };
   getDb()
     .update(users)
-    .set({ ...next, apps: [...new Set(v.apps)], autoAdapt: v.autoAdapt, onboardedAt: new Date() })
+    .set({ ...next, apps: [...new Set(v.apps)], autoAdapt: v.autoAdapt, baselineWeeklyHours: v.baselineWeeklyHours === null ? null : Math.round(v.baselineWeeklyHours * 2) / 2, onboardedAt: new Date() })
     .where(eq(users.id, user.id))
     .run();
   recomputeLoads(user.id, next);

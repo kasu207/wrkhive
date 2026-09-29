@@ -21,6 +21,7 @@ const profile = z.object({
   thresholdPaceMin: z.coerce.number().int().min(2).max(12),
   thresholdPaceSec: z.coerce.number().int().min(0).max(59),
   weightKg: z.union([z.literal(""), z.coerce.number().min(30).max(250)]),
+  baselineWeeklyHours: z.union([z.literal(""), z.coerce.number().min(0, "Trainingsumfang zwischen 0 und 40 h").max(40, "Trainingsumfang zwischen 0 und 40 h")]).default(""),
   timeZone: z.string().max(64),
 });
 
@@ -48,7 +49,8 @@ export async function updateProfile(input: Record<string, string>): Promise<Acti
     weightKg: p.weightKg === "" ? null : p.weightKg,
     timeZone,
   };
-  getDb().update(users).set(next).where(eq(users.id, user.id)).run();
+  const baselineWeeklyHours = p.baselineWeeklyHours === "" ? null : Math.round(p.baselineWeeklyHours * 2) / 2;
+  getDb().update(users).set({ ...next, baselineWeeklyHours }).where(eq(users.id, user.id)).run();
 
   // Thresholds changed: re-derive load metrics for workouts and activities.
   recomputeLoads(user.id, next);
@@ -73,4 +75,16 @@ export async function deleteAccount(confirmation: string): Promise<ActionResult>
   db.delete(users).where(eq(users.id, user.id)).run();
   await destroySession();
   redirect("/");
+}
+
+const baseline = z.number().min(0, "Zwischen 0 und 40 Stunden.").max(40, "Zwischen 0 und 40 Stunden.").nullable();
+
+/** Weekly training hours before Wrkhive; seeds fitness so a short history is not read as overload. */
+export async function setBaselineHours(hours: number | null): Promise<ActionResult> {
+  const user = await requireUser();
+  const parsed = baseline.safeParse(hours);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." };
+  getDb().update(users).set({ baselineWeeklyHours: parsed.data === null ? null : Math.round(parsed.data * 2) / 2 }).where(eq(users.id, user.id)).run();
+  revalidatePath("/", "layout");
+  return { ok: true, message: parsed.data === null ? "Startwert entfernt." : "Fitness und Form wurden neu berechnet." };
 }

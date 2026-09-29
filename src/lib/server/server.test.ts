@@ -8,6 +8,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
+const addDaysIso = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wrkhive-test-"));
 process.env.DATABASE_PATH = path.join(tmp, "test.db");
 
@@ -36,7 +37,7 @@ const schema = await import("@/db/schema");
 const { applyProviderMoves, ensureScheduled, isSameSession, upsertActivities, syncConnection, todayFor } = await import("./sync");
 const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
-const { pmcFor } = await import("./training");
+const { formCalibration, pmcFor } = await import("./training");
 const { adaptScheduled, autoAdaptToday, readinessFor, restoreScheduled } = await import("./adapt");
 const { importAppleWorkouts, rotateAppleHealthKey, userByAppleHealthKey, revokeAppleHealthKey } = await import("./apple-health");
 const { POST: appleHealthWebhook } = await import("@/app/api/ingest/apple-health/route");
@@ -466,5 +467,32 @@ describe("demo data on a personal server", () => {
     expect(conns[0].lastSyncAt).toBeNull();
     expect(demo.id).toBeTruthy();
     expect(await withDemo("false", () => purgeStrayDemoData())).toMatchObject({ users: 0 });
+  });
+});
+
+describe("form calibration", () => {
+  it("does not judge form or adapt workouts on a short history until a baseline is given", () => {
+    const user = makeUser("u-calib");
+    const today = todayFor(user);
+    const list = [1, 2, 3, 4, 5, 6].map((d) => ({
+      externalId: `c-${d}`,
+      sport: "ride" as const,
+      name: "Runde",
+      startTime: new Date(`${addDaysIso(today, -d)}T16:00:00Z`),
+      durationSec: 5400,
+      normPower: 220,
+    }));
+    upsertActivities(user, { id: null, provider: "manual" }, list);
+    expect(formCalibration(user)).toMatchObject({ reliable: false, historyDays: 7, remainingDays: 35 });
+    expect(readinessFor(user)).toBeNull();
+    const cold = pmcFor(user, 1).at(-1)!;
+
+    getDb().update(schema.users).set({ baselineWeeklyHours: 8 }).where(eq(schema.users.id, user.id)).run();
+    const seeded = getDb().select().from(schema.users).where(eq(schema.users.id, user.id)).get()!;
+    expect(formCalibration(seeded).reliable).toBe(true);
+    const warm = pmcFor(seeded, 1).at(-1)!;
+    expect(warm.ctl).toBeGreaterThan(cold.ctl + 40);
+    expect(warm.tsb).toBeGreaterThan(cold.tsb);
+    expect(readinessFor(seeded)).not.toBeNull();
   });
 });

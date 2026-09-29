@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `baseline_weekly_hours` real;

@@ -20,6 +20,7 @@ export interface ProfileValues {
   restHr: number;
   thresholdPace: number;
   weightKg: number | null;
+  baselineWeeklyHours: number | null;
   timeZone: string;
 }
 
@@ -38,6 +39,7 @@ export function SettingsForm({ initial, isDemo }: { initial: ProfileValues; isDe
     paceMin: String(Math.floor(initial.thresholdPace / 60)),
     paceSec: String(initial.thresholdPace % 60).padStart(2, "0"),
     weightKg: initial.weightKg ? String(initial.weightKg) : "",
+    baselineWeeklyHours: initial.baselineWeeklyHours !== null ? String(initial.baselineWeeklyHours).replace(".", ",") : "",
     timeZone: initial.timeZone,
   });
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV((s) => ({ ...s, [k]: e.target.value }));
@@ -75,6 +77,7 @@ export function SettingsForm({ initial, isDemo }: { initial: ProfileValues; isDe
               thresholdPaceMin: v.paceMin,
               thresholdPaceSec: v.paceSec,
               weightKg: v.weightKg.replace(",", "."),
+              baselineWeeklyHours: v.baselineWeeklyHours.replace(",", "."),
               timeZone: v.timeZone,
             });
             if (r.ok) {
@@ -112,6 +115,9 @@ export function SettingsForm({ initial, isDemo }: { initial: ProfileValues; isDe
             </Field>
             <Field label="Gewicht" htmlFor="weight" hint="Optional, für W/kg">
               <UnitInput id="weight" unit="kg" inputMode="decimal" value={v.weightKg} onChange={set("weightKg")} />
+            </Field>
+            <Field label="Trainingsumfang vor Wrkhive" htmlFor="baseline" hint="Stunden pro Woche vor deiner ersten synchronisierten Aktivität. Startwert für Fitness und Form">
+              <UnitInput id="baseline" unit="h/Woche" inputMode="decimal" value={v.baselineWeeklyHours} onChange={set("baselineWeeklyHours")} className="[&_input]:pr-20" />
             </Field>
             <Field label="Zeitzone" htmlFor="tz" className="sm:col-span-2" hint="Bestimmt, welchem Kalendertag Aktivitäten zugeordnet werden">
               <Select id="tz" value={v.timeZone} onChange={set("timeZone")}>

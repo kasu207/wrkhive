@@ -22,7 +22,8 @@ import { adaptWorkout } from "@/lib/workout/adapt";
 import { autoAdaptToday, readinessFor } from "@/lib/server/adapt";
 import { requireUser, thresholdsOf } from "@/lib/server/auth";
 import { PROVIDERS, todayFor } from "@/lib/server/sync";
-import { activitiesBetween, pmcFor, recentActivities, runningFitness, scheduledBetween, weeklyVolume } from "@/lib/server/training";
+import { activitiesBetween, formCalibration, pmcFor, recentActivities, runningFitness, scheduledBetween, weeklyVolume } from "@/lib/server/training";
+import { BaselineForm } from "@/components/baseline-form";
 
 export const metadata: Metadata = { title: "Übersicht" };
 
@@ -93,7 +94,8 @@ export default async function DashboardPage() {
         return { steps, done: steps.filter((x) => x.done).length };
       })();
   const formPct = now ? Math.round((now.tsb / Math.max(now.ctl, 20)) * 100) : 0;
-  const form = now && hasData ? formState(formPct) : null;
+  const calibration = formCalibration(user);
+  const form = now && hasData && calibration.reliable ? formState(formPct) : null;
   const ctlDelta = now && weekAgo ? now.ctl - weekAgo.ctl : 0;
   const weekStart = startOfWeek(today);
   const weekDays = Math.min(7, Math.round((Date.parse(today) - Date.parse(weekStart)) / 86_400_000) + 1);
@@ -270,6 +272,29 @@ export default async function DashboardPage() {
                   und dabei die importierten Aktivitäten löschen, damit Fitness und Form nur dein Training zeigen.
                 </p>
               ) : null}
+              <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
+                <MiniStat label="Fitness (CTL)" value={formatNumber(now.ctl, 0)} delta={ctlDelta} deltaLabel="in 7 Tagen" upIsGood />
+                <MiniStat label="Ermüdung (ATL)" value={formatNumber(now.atl, 0)} />
+              </div>
+            </>
+          ) : hasData && now ? (
+            <>
+              <Badge tone="info" className="mt-3 self-start">
+                Kalibrierung, noch {calibration.remainingDays} {calibration.remainingDays === 1 ? "Tag" : "Tage"}
+              </Badge>
+              <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
+                Wrkhive kennt dein Training erst seit {calibration.historyDays} {calibration.historyDays === 1 ? "Tag" : "Tagen"}. Ohne Vorgeschichte startet die Fitness bei null, und jede Einheit wirkt wie Überlastung. Gib an, wie viel du bisher trainiert hast, dann stimmt die Form sofort.
+              </p>
+              <div className="mt-3">
+                <BaselineForm />
+              </div>
+              <p className="mt-2 text-[12px] leading-relaxed text-ink-3">
+                Genauer geht es mit echter Historie:{" "}
+                <Link href="/devices" className="font-medium text-ink-2 underline">
+                  ältere Aktivitäten importieren
+                </Link>{" "}
+                (z. B. Garmin-Connect-Export als ZIP). Bis dahin werden Workouts nicht automatisch angepasst.
+              </p>
               <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
                 <MiniStat label="Fitness (CTL)" value={formatNumber(now.ctl, 0)} delta={ctlDelta} deltaLabel="in 7 Tagen" upIsGood />
                 <MiniStat label="Ermüdung (ATL)" value={formatNumber(now.atl, 0)} />

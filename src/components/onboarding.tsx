@@ -32,6 +32,7 @@ export function Onboarding({ name, directAvailable, defaults }: { name: string; 
   const [ftp, setFtp] = useState("");
   const [lthr, setLthr] = useState("");
   const [pace, setPace] = useState("");
+  const [baseline, setBaseline] = useState("");
   const [autoAdapt, setAutoAdapt] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -46,6 +47,8 @@ export function Onboarding({ name, directAvailable, defaults }: { name: string; 
     if (f !== null && !(Number.isInteger(f) && f >= 50 && f <= 600)) return "FTP zwischen 50 und 600 Watt.";
     if (l !== null && !(Number.isInteger(l) && l >= 100 && l <= 220)) return "Schwellenpuls zwischen 100 und 220 bpm.";
     if (pace.trim() && p === null) return "Schwellenpace im Format 4:45 (min/km).";
+    const h = baseline.trim() ? Number(baseline.replace(",", ".")) : null;
+    if (h !== null && !(Number.isFinite(h) && h >= 0 && h <= 40)) return "Trainingsumfang zwischen 0 und 40 Stunden pro Woche.";
     return null;
   };
 
@@ -56,6 +59,7 @@ export function Onboarding({ name, directAvailable, defaults }: { name: string; 
         ftp: ftp.trim() ? Number(ftp) : null,
         lthr: lthr.trim() ? Number(lthr) : null,
         thresholdPace: pace.trim() ? parsePace(pace) : null,
+        baselineWeeklyHours: baseline.trim() ? Number(baseline.replace(",", ".")) : null,
         autoAdapt,
       });
       if (!r.ok) {
@@ -132,6 +136,9 @@ export function Onboarding({ name, directAvailable, defaults }: { name: string; 
             </Field>
             <Field label="Schwellenpace (Laufen)" htmlFor="ob-pace" hint={`Pace für etwa eine Stunde Wettkampf. Standard ${defaults.pace} min/km`} suffix="min/km">
               <Input id="ob-pace" value={pace} onChange={(e) => setPace(e.target.value)} placeholder={defaults.pace} />
+            </Field>
+            <Field label="Training pro Woche bisher" htmlFor="ob-baseline" hint="Durchschnitt der letzten Wochen. Startwert für Fitness und Form, damit die ersten Einheiten nicht wie Überlastung wirken" suffix="h">
+              <Input id="ob-baseline" inputMode="decimal" value={baseline} onChange={(e) => setBaseline(e.target.value)} placeholder="z. B. 6" />
             </Field>
             {error ? (
               <p className="rounded-xl bg-critical-soft px-3.5 py-2.5 text-[13px] text-critical-ink" role="alert">

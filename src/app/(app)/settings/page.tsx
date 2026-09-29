@@ -24,6 +24,7 @@ export default async function SettingsPage() {
           restHr: user.restHr,
           thresholdPace: user.thresholdPace,
           weightKg: user.weightKg,
+          baselineWeeklyHours: user.baselineWeeklyHours,
           timeZone: user.timeZone,
         }}
       />

@@ -27,6 +27,8 @@ export const users = sqliteTable(
     /** Adjust planned, not yet sent workouts to the current load automatically. */
     autoAdapt: integer("auto_adapt", { mode: "boolean" }).notNull().default(false),
     onboardedAt: integer("onboarded_at", { mode: "timestamp_ms" }),
+    /** Weekly training hours before the first synced activity; seeds fitness so short histories are not read as overload. */
+    baselineWeeklyHours: real("baseline_weekly_hours"),
     /** SHA-256 of the Apple Health webhook key (Health Auto Export); the key itself is shown once. */
     appleHealthKeyHash: text("apple_health_key_hash"),
     /** Last delivery from Health Auto Export. */

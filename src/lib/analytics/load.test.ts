@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityLoad, effectiveVo2max, performanceChart, predictRaceTime } from "./load";
+import { activityLoad, baselineDailyLoad, effectiveVo2max, performanceChart, predictRaceTime } from "./load";
 
 const M = { ftp: 250, lthr: 170, maxHr: 190, restHr: 50, thresholdPace: 300 };
 
@@ -27,6 +27,29 @@ describe("activity load", () => {
 });
 
 describe("PMC", () => {
+  // Nine days of normal training right after connecting (a new account).
+  const burst = new Map<string, number>([
+    ["2026-09-20", 60], ["2026-09-21", 90], ["2026-09-22", 70], ["2026-09-23", 110], ["2026-09-24", 50],
+    ["2026-09-25", 120], ["2026-09-26", 90], ["2026-09-27", 60], ["2026-09-28", 120],
+  ]);
+  const formPct = (p: { tsb: number; ctl: number }) => Math.round((p.tsb / Math.max(p.ctl, 20)) * 100);
+  it("reads a short history without seed as overload", () => {
+    expect(formPct(performanceChart(burst, "2026-09-29", "2026-09-29", "2026-05-01").at(-1)!)).toBeLessThan(-150);
+  });
+  it("seeds fitness from the training volume before the first activity", () => {
+    const seed = { date: "2026-09-20", load: baselineDailyLoad(8) };
+    const p = performanceChart(burst, "2026-09-29", "2026-09-29", "2026-05-01", seed).at(-1)!;
+    expect(p.ctl).toBeGreaterThan(55);
+    expect(formPct(p)).toBeGreaterThan(-40);
+    // Rest days now show recovery clearly.
+    const later = performanceChart(burst, "2026-10-02", "2026-10-02", "2026-05-01", seed).at(-1)!;
+    expect(formPct(later)).toBeGreaterThan(0);
+  });
+  it("applies a seed that lies before the warm-up window", () => {
+    const a = performanceChart(burst, "2026-09-29", "2026-09-29", "2026-09-25", { date: "2026-09-20", load: 60 }).at(-1)!;
+    const b = performanceChart(burst, "2026-09-29", "2026-09-29", "2026-01-01", { date: "2026-09-20", load: 60 }).at(-1)!;
+    expect(a).toEqual(b);
+  });
   it("converges towards a constant daily load", () => {
     const daily = new Map<string, number>();
     let d = "2026-01-01";

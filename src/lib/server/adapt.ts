@@ -9,7 +9,7 @@ import { adaptWorkout } from "@/lib/workout/adapt";
 import { summarize } from "@/lib/workout/metrics";
 import { thresholdsOf } from "./auth";
 import { PROVIDERS, todayFor } from "./sync";
-import { pmcFor } from "./training";
+import { formCalibration, pmcFor } from "./training";
 
 /**
  * Readiness for today, or null without enough recent data to judge (a
@@ -24,6 +24,8 @@ export function readinessFor(user: User): Readiness | null {
       .where(and(eq(activities.userId, user.id), gte(activities.date, addDays(today, -21))))
       .get()?.n ?? 0;
   if (recent < 3) return null;
+  // Without enough history the model reads every session as overload; never adapt on that basis.
+  if (!formCalibration(user).reliable) return null;
   return readinessFromPmc(pmcFor(user, 14));
 }
 

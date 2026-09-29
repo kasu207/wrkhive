@@ -1,10 +1,10 @@
 import "server-only";
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, min, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { activities, scheduledWorkouts, workouts, type User } from "@/db/schema";
-import { performanceChart, predictRaceTime, type PmcPoint } from "@/lib/analytics/load";
+import { baselineDailyLoad, performanceChart, predictRaceTime, type PmcPoint } from "@/lib/analytics/load";
 import { readinessFromPmc } from "@/lib/analytics/readiness";
-import { addDays, startOfWeek, type ISODate } from "@/lib/dates";
+import { addDays, diffDays, startOfWeek, type ISODate } from "@/lib/dates";
 import { todayFor } from "./sync";
 
 export function dailyLoad(userId: string, from: ISODate, to: ISODate): Map<ISODate, number> {
@@ -17,12 +17,34 @@ export function dailyLoad(userId: string, from: ISODate, to: ISODate): Map<ISODa
   return new Map(rows.map((r) => [r.date, r.tss ?? 0]));
 }
 
-/** PMC for the last `days` days, warmed up with 120 extra days of history. */
+/** Day of the athlete's first recorded activity, if any. */
+export function firstActivityDate(userId: string): ISODate | null {
+  return getDb().select({ first: min(activities.date) }).from(activities).where(eq(activities.userId, userId)).get()?.first ?? null;
+}
+
+/** Days of history the load model needs before fitness and form mean something (CTL time constant). */
+export const CALIBRATION_DAYS = 42;
+
+/**
+ * Whether fitness and form can be trusted: either the athlete stated their
+ * training volume before Wrkhive (seeds the model) or there are at least six
+ * weeks of history. Otherwise every session looks like overload.
+ */
+export function formCalibration(user: Pick<User, "id" | "timeZone" | "baselineWeeklyHours">): { reliable: boolean; historyDays: number; remainingDays: number } {
+  const first = firstActivityDate(user.id);
+  const historyDays = first ? diffDays(todayFor(user), first) + 1 : 0;
+  const reliable = user.baselineWeeklyHours !== null || historyDays >= CALIBRATION_DAYS;
+  return { reliable, historyDays, remainingDays: Math.max(0, CALIBRATION_DAYS - historyDays) };
+}
+
+/** PMC for the last `days` days, warmed up with 120 extra days of history and seeded with the stated baseline. */
 export function pmcFor(user: User, days: number): PmcPoint[] {
   const today = todayFor(user);
   const from = addDays(today, -days + 1);
   const warm = addDays(from, -120);
-  return performanceChart(dailyLoad(user.id, warm, today), from, today, warm);
+  const first = user.baselineWeeklyHours ? firstActivityDate(user.id) : null;
+  const seed = first && user.baselineWeeklyHours ? { date: first, load: baselineDailyLoad(user.baselineWeeklyHours) } : undefined;
+  return performanceChart(dailyLoad(user.id, seed && seed.date < warm ? seed.date : warm, today), from, today, warm, seed);
 }
 
 export interface WeekVolume {
@@ -135,7 +157,10 @@ export function trainingContext(user: User): string {
   if (now) {
     lines.push(`Fitness (CTL) ${now.ctl}, Ermüdung (ATL) ${now.atl}, Form (TSB) ${now.tsb}; CTL vor 7 Tagen ${weekAgo?.ctl ?? "?"}`);
   }
-  const readiness = recent.length >= 3 ? readinessFromPmc(pmc) : null;
+  const calibration = formCalibration(user);
+  if (!calibration.reliable) lines.push(`Verlauf erst ${calibration.historyDays} Tage, kein Trainingsumfang vor Wrkhive angegeben: Fitness und Form sind noch nicht aussagekräftig (Modell startet bei null). Nicht als Überlastung werten.`);
+  else if (user.baselineWeeklyHours) lines.push(`Trainingsumfang vor Wrkhive laut Athlet: ${user.baselineWeeklyHours} h/Woche (Startwert der Fitness).`);
+  const readiness = recent.length >= 3 && calibration.reliable ? readinessFromPmc(pmc) : null;
   if (readiness) lines.push(`Bereitschaft: ${readiness.label} (Form ${readiness.formPct} % der Fitness, Rampe ${readiness.ramp} CTL/Woche). ${readiness.advice}`);
   if (fitness) lines.push(`Lauf-VO2max (effektiv) ${fitness.vo2max}`);
   lines.push(

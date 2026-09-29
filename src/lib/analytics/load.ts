@@ -77,18 +77,36 @@ export interface PmcPoint {
   tsb: number;
 }
 
+/** Typical load per training hour (endurance at IF ~0.7), used to turn weekly hours into daily load. */
+export const TSS_PER_HOUR_TYPICAL = 50;
+
+/** Daily load of an athlete who trained `hours` per week, the steady state of CTL and ATL. */
+export function baselineDailyLoad(weeklyHours: number): number {
+  return (weeklyHours * TSS_PER_HOUR_TYPICAL) / 7;
+}
+
 /**
  * Computes the PMC from daily load. `daily` may be sparse; days without an
  * entry count as zero load. The model is warmed up from the first day given.
+ *
+ * `seed` starts fitness and fatigue at a steady state on `seed.date` (the
+ * first recorded day) instead of zero: without it a new athlete's first
+ * weeks look like massive overload, because the model assumes no training
+ * happened before the first synced activity.
  */
-export function performanceChart(daily: Map<ISODate, number>, from: ISODate, to: ISODate, warmupFrom?: ISODate): PmcPoint[] {
-  const start = warmupFrom && warmupFrom < from ? warmupFrom : from;
+export function performanceChart(daily: Map<ISODate, number>, from: ISODate, to: ISODate, warmupFrom?: ISODate, seed?: { date: ISODate; load: number }): PmcPoint[] {
+  let start = warmupFrom && warmupFrom < from ? warmupFrom : from;
+  if (seed && seed.load > 0 && seed.date < start) start = seed.date;
   const out: PmcPoint[] = [];
   let ctl = 0;
   let atl = 0;
   const kCtl = 1 - Math.exp(-1 / 42);
   const kAtl = 1 - Math.exp(-1 / 7);
   for (let d = start; d <= to; d = addDays(d, 1)) {
+    if (seed && seed.load > 0 && d === seed.date) {
+      ctl = Math.max(ctl, seed.load);
+      atl = Math.max(atl, seed.load);
+    }
     const tss = daily.get(d) ?? 0;
     const tsb = ctl - atl; // form going into the day
     ctl = ctl + (tss - ctl) * kCtl;

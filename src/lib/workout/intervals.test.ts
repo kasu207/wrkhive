@@ -74,6 +74,12 @@ describe("ERG suitability", () => {
     expect(c.shortEfforts).toBe(1);
     expect(ergHints(w)).toHaveLength(2);
   });
+  it("flags 30-second surges up to one minute, as ridden in ERG", () => {
+    const w = parse("Aufwärmen 12min 50-65% 85-95rpm\n6x (30s 115-125% 95-105rpm, Erholung 2min 50%)\n8min 75-80% 85-95rpm\n3x (30s 120% 100-110rpm, Erholung 1min 30s 50%)\nCool-down 7min 45-55%");
+    expect(ergCheck(w)).toMatchObject({ withoutPower: 0, shortEfforts: 2 });
+    expect(ergHints(w)[0]).toMatch(/Kettenblatt/);
+    expect(ergCheck(parse("3x (2min 110%, 2min 50%)")).shortEfforts).toBe(0);
+  });
   it("only applies to rides", () => {
     expect(ergHints(parse("30min 80% LTHR", "run"))).toEqual([]);
   });

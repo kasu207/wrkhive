@@ -4,6 +4,10 @@
  * the app they were recorded with.
  *
  * Routes (verified against the vendors' published integrations):
+ *  - Apple Health: no web API (HealthKit is on-device only). Workouts come
+ *    from the Health app's export (read in the browser) or continuously from
+ *    the iOS app "Health Auto Export" via a per-user webhook; alternatively
+ *    through the Intervals.icu Companion app
  *  - Garmin, Wahoo: direct API or via intervals.icu (both directions)
  *  - Zwift: intervals.icu uploads planned workouts through Zwift's Training
  *    API and receives finished rides; .zwo files for the Zwift workouts folder
@@ -71,12 +75,12 @@ export type FlowStatus = "ready" | "setup" | "unsupported";
 
 export interface AppRoute {
   /** Wrkhive connection the route depends on, if any. */
-  via: "intervals" | "garmin" | "wahoo" | "file" | "none";
+  via: "intervals" | "garmin" | "wahoo" | "apple" | "file" | "none";
   text: string;
 }
 
 export interface AppInfo {
-  id: "garmin" | "wahoo" | "zwift" | "mywhoosh" | "rouvy" | "freeletics";
+  id: "garmin" | "wahoo" | "apple" | "zwift" | "mywhoosh" | "rouvy" | "freeletics";
   name: string;
   kind: "device" | "app";
   tagline: string;
@@ -133,6 +137,23 @@ export const APPS: AppInfo[] = [
     link: { label: "Wahoo-Entwicklerportal", href: "https://developers.wahooligan.com/" },
   },
   {
+    id: "apple",
+    name: "Apple Health",
+    kind: "app",
+    tagline: "Apple Watch und iPhone",
+    activities: [
+      { via: "apple", text: "Automatisch mit der iPhone-App Health Auto Export" },
+      { via: "intervals", text: "Über die App „Intervals.icu Companion“ nach intervals.icu" },
+      { via: "file", text: "Export aus der Health-App importieren (alle bisherigen Workouts)" },
+    ],
+    workouts: [],
+    setup: [
+      "Bisherige Workouts: in der Health-App auf das Profilbild tippen, „Alle Gesundheitsdaten exportieren“ und die ZIP-Datei unter Apps & Geräte > Apple Health importieren.",
+      "Laufend: die iPhone-App „Health Auto Export“ installieren und dort eine REST-API-Automation mit deinem Wrkhive-Schlüssel anlegen (Anleitung in der Apple-Health-Karte).",
+    ],
+    link: null,
+  },
+  {
     id: "zwift",
     name: "Zwift",
     kind: "app",
@@ -179,7 +200,10 @@ export const APPS: AppInfo[] = [
     name: "Freeletics",
     kind: "app",
     tagline: "Bodyweight- und Krafttraining",
-    activities: [{ via: "intervals", text: "Über Apple Health bzw. Health Connect und eine Sync-App nach intervals.icu" }],
+    activities: [
+      { via: "intervals", text: "Über Apple Health bzw. Health Connect und eine Sync-App nach intervals.icu" },
+      { via: "apple", text: "iPhone: über den Apple-Health-Import von Wrkhive (Export oder Health Auto Export)" },
+    ],
     workouts: [],
     setup: [
       "In Freeletics unter Profil > Einstellungen die Übertragung an Apple Health (iPhone) bzw. Health Connect (Android) aktivieren.",
@@ -191,14 +215,17 @@ export const APPS: AppInfo[] = [
 
 /** Freeletics offers no interface to receive workouts; its training plans stay in the app. */
 export const WORKOUT_UNSUPPORTED_NOTE: Partial<Record<AppInfo["id"], string>> = {
+  apple: "Apple lässt Workouts nur von einer eigenen iPhone-App auf die Watch übertragen. Deine Einheiten zählen trotzdem in Belastung und Kalender.",
   freeletics: "Freeletics nimmt keine fremden Workouts an. Deine Einheiten zählen trotzdem in Belastung und Kalender.",
 };
 
 export type ConnectionId = "garmin" | "wahoo" | "intervals";
+/** Everything the athlete may have to set up once: provider connections and the Apple Health import. */
+export type SetupId = ConnectionId | "apple";
 
 export interface Recommendation {
   /** Connections to set up, most important first, with the apps each one covers. */
-  connections: { id: ConnectionId; apps: AppInfo["id"][] }[];
+  connections: { id: SetupId; apps: AppInfo["id"][] }[];
   /** Per app: the route used for activities and for workouts (null = not possible). */
   routes: { app: AppInfo; activities: AppRoute | null; workouts: AppRoute | null }[];
 }
@@ -209,10 +236,10 @@ export interface Recommendation {
  * API credentials for them; intervals.icu works everywhere.
  */
 export function recommendConnections(selected: AppInfo["id"][], directAvailable: { garmin: boolean; wahoo: boolean }): Recommendation {
-  const usable = (r: AppRoute) => r.via === "intervals" || r.via === "file" || (r.via === "garmin" && directAvailable.garmin) || (r.via === "wahoo" && directAvailable.wahoo);
+  const usable = (r: AppRoute) => r.via === "intervals" || r.via === "apple" || r.via === "file" || (r.via === "garmin" && directAvailable.garmin) || (r.via === "wahoo" && directAvailable.wahoo);
   const pick = (list: AppRoute[]) => list.find((r) => usable(r) && r.via !== "file") ?? list.find(usable) ?? null;
   const routes = APPS.filter((a) => selected.includes(a.id)).map((app) => ({ app, activities: pick(app.activities), workouts: pick(app.workouts) }));
-  const byConn = new Map<ConnectionId, Set<AppInfo["id"]>>();
+  const byConn = new Map<SetupId, Set<AppInfo["id"]>>();
   for (const r of routes) {
     for (const route of [r.activities, r.workouts]) {
       if (!route || route.via === "file" || route.via === "none") continue;

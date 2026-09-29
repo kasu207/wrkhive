@@ -3,6 +3,7 @@ import { Bike, FileDown, Upload } from "lucide-react";
 import { ImportButton } from "@/components/import-button";
 import type { Metadata } from "next";
 import { AppHub } from "@/components/devices/app-hub";
+import { AppleHealthCard } from "@/components/devices/apple-health-card";
 import { DeviceCard } from "@/components/devices/device-card";
 import { Card, PageHeader } from "@/components/ui/card";
 import { getDb } from "@/db";
@@ -92,7 +93,9 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
       .filter((r) => r.last)
       .map((r) => [r.app, (r.last as Date).getTime()]),
   ) as Partial<Record<AppInfo["id"], number>>;
-  const hubConns = conns.filter((c) => c.status !== "revoked").map((c) => ({ provider: c.provider, live: c.mode === "live" }));
+  const appleCount = db.select({ n: count() }).from(activities).where(and(eq(activities.userId, user.id), eq(activities.provider, "apple"))).get()?.n ?? 0;
+  const hubConns: { provider: "garmin" | "wahoo" | "intervals" | "apple"; live: boolean }[] = conns.filter((c) => c.status !== "revoked").map((c) => ({ provider: c.provider, live: c.mode === "live" }));
+  if (user.appleHealthKeyHash || appleCount) hubConns.push({ provider: "apple", live: true });
 
   return (
     <div className="animate-fade-up">
@@ -118,6 +121,13 @@ export default async function DevicesPage(props: PageProps<"/devices">) {
           {cards.map((c) => (
             <DeviceCard key={c.provider} {...c} />
           ))}
+          <AppleHealthCard
+            hasKey={!!user.appleHealthKeyHash}
+            lastDeliveryAt={user.appleHealthLastAt?.getTime() ?? null}
+            activityCount={appleCount}
+            webhookUrl={`${env.appUrl()}/api/ingest/apple-health`}
+            demo={user.isDemo}
+          />
         </div>
       </section>
 

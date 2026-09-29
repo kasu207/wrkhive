@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 const APP_COLOR: Record<AppInfo["id"], string> = {
   garmin: "bg-[#111110]",
   wahoo: "bg-[#1a4fd6]",
+  apple: "bg-[#d23c5a]",
   zwift: "bg-[#fc6719]",
   mywhoosh: "bg-[#0b7a75]",
   rouvy: "bg-[#4a2fd0]",

@@ -7,26 +7,34 @@ const createdAt = () =>
     .notNull()
     .default(sql`(unixepoch() * 1000)`);
 
-export const users = sqliteTable("users", {
-  id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  passwordHash: text("password_hash").notNull(),
-  ftp: integer("ftp").notNull().default(230),
-  lthr: integer("lthr").notNull().default(165),
-  maxHr: integer("max_hr").notNull().default(188),
-  restHr: integer("rest_hr").notNull().default(52),
-  thresholdPace: integer("threshold_pace").notNull().default(285),
-  weightKg: real("weight_kg"),
-  timeZone: text("time_zone").notNull().default("Europe/Berlin"),
-  isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
-  /** Devices and apps the athlete uses (onboarding), see lib/apps.ts. */
-  apps: text("apps", { mode: "json" }).$type<string[]>(),
-  /** Adjust planned, not yet sent workouts to the current load automatically. */
-  autoAdapt: integer("auto_adapt", { mode: "boolean" }).notNull().default(false),
-  onboardedAt: integer("onboarded_at", { mode: "timestamp_ms" }),
-  createdAt: createdAt(),
-});
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull().unique(),
+    name: text("name").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    ftp: integer("ftp").notNull().default(230),
+    lthr: integer("lthr").notNull().default(165),
+    maxHr: integer("max_hr").notNull().default(188),
+    restHr: integer("rest_hr").notNull().default(52),
+    thresholdPace: integer("threshold_pace").notNull().default(285),
+    weightKg: real("weight_kg"),
+    timeZone: text("time_zone").notNull().default("Europe/Berlin"),
+    isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+    /** Devices and apps the athlete uses (onboarding), see lib/apps.ts. */
+    apps: text("apps", { mode: "json" }).$type<string[]>(),
+    /** Adjust planned, not yet sent workouts to the current load automatically. */
+    autoAdapt: integer("auto_adapt", { mode: "boolean" }).notNull().default(false),
+    onboardedAt: integer("onboarded_at", { mode: "timestamp_ms" }),
+    /** SHA-256 of the Apple Health webhook key (Health Auto Export); the key itself is shown once. */
+    appleHealthKeyHash: text("apple_health_key_hash"),
+    /** Last delivery from Health Auto Export. */
+    appleHealthLastAt: integer("apple_health_last_at", { mode: "timestamp_ms" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("users_apple_health_key_idx").on(t.appleHealthKeyHash)],
+);
 
 export const sessions = sqliteTable(
   "sessions",
@@ -184,7 +192,8 @@ export const activities = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     connectionId: text("connection_id").references(() => deviceConnections.id, { onDelete: "set null" }),
-    provider: text("provider", { enum: ["garmin", "wahoo", "intervals", "manual"] }).notNull(),
+    /** Sync route: provider API, "apple" (Apple Health export or Health Auto Export) or "manual" (file import, manual entry). */
+    provider: text("provider", { enum: ["garmin", "wahoo", "intervals", "apple", "manual"] }).notNull(),
     externalId: text("external_id").notNull(),
     sport: text("sport", { enum: ["ride", "run", "strength", "other"] }).notNull(),
     name: text("name").notNull(),

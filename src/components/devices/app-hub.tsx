@@ -6,11 +6,11 @@ import { cn } from "@/lib/cn";
 import { relativeTime } from "@/lib/format";
 
 export interface HubConnection {
-  provider: "garmin" | "wahoo" | "intervals";
+  provider: "garmin" | "wahoo" | "intervals" | "apple";
   live: boolean;
 }
 
-const VIA_LABEL: Record<AppRoute["via"], string> = { garmin: "Garmin", wahoo: "Wahoo", intervals: "intervals.icu", file: "Datei", none: "" };
+const VIA_LABEL: Record<AppRoute["via"], string> = { garmin: "Garmin", wahoo: "Wahoo", intervals: "intervals.icu", apple: "Apple Health", file: "Datei", none: "" };
 
 function status(routes: AppRoute[], conns: HubConnection[]): { route: AppRoute | null; active: boolean; demo: boolean } {
   for (const r of routes) {

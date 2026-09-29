@@ -76,12 +76,12 @@ export default async function DashboardPage() {
   const setup = user.isDemo
     ? null
     : (() => {
-        const live = connections.some((c) => c.mode === "live" && c.status !== "revoked");
+        const live = connections.some((c) => c.mode === "live" && c.status !== "revoked") || !!user.appleHealthKeyHash;
         const realActivities = db.select({ n: count() }).from(activities).where(and(eq(activities.userId, user.id), or(isNull(activities.sourceApp), ne(activities.sourceApp, "demo")))).get()?.n ?? 0;
         const built = db.select({ n: count() }).from(workouts).where(and(eq(workouts.userId, user.id), ne(workouts.source, "plan"))).get()?.n ?? 0;
         const sent = db.select({ n: count() }).from(deliveries).where(and(eq(deliveries.userId, user.id), eq(deliveries.status, "sent"))).get()?.n ?? 0;
         const steps = [
-          { label: "Apps und Geräte verbinden", hint: "Wahoo, Garmin oder intervals.icu", href: "/devices", done: live },
+          { label: "Apps und Geräte verbinden", hint: "Wahoo, Garmin, intervals.icu oder Apple Health", href: "/devices", done: live },
           { label: "Aktivitäten synchronisiert", hint: "Kommen nach dem Verbinden automatisch", href: "/activities", done: realActivities > 0 },
           { label: "Erstes Workout gebaut", hint: "Selbst, aus einer Vorlage oder vom Coach", href: "/workouts/new", done: built > 0 },
           { label: "Workout aufs Gerät gesendet", hint: "Im Workout auf „An Gerät senden“", href: "/workouts", done: sent > 0 },

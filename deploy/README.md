@@ -199,4 +199,5 @@ Läuft auf dem Server schon ein Webserver auf Port 80/443 (Fehler beim Start: `f
 ## Nach dem Umzug auf HTTPS
 
 - **intervals.icu** funktioniert ohne Änderung.
+- **Apple Health (Health Auto Export):** Die Automation braucht die öffentliche HTTPS-Adresse `https://deine-domain/api/ingest/apple-health`. Wrkhive zeigt sie in der Apple-Health-Karte an und leitet sie aus `DOMAIN` in `.env.production` ab.
 - **Wahoo** (nach Freigabe deiner App): Im Wahoo-Entwicklerportal als Redirect URI `https://deine-domain/api/devices/wahoo/callback` eintragen. Mit HTTPS entfällt das localhost-Problem; Webhooks (sofortiger Import) gehen an `https://deine-domain/api/webhooks/wahoo`.

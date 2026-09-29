@@ -14,6 +14,8 @@ import type { Activity } from "@/db/schema";
 import { formatDistance, formatDuration, formatNumber, formatPace, formatSpeedKmh } from "@/lib/format";
 import { SOURCE_APP_LABEL, type SourceAppId } from "@/lib/apps";
 
+const ROUTE_LABEL: Record<Activity["provider"], string> = { garmin: "Garmin", wahoo: "Wahoo", intervals: "intervals.icu", apple: "Apple Health", manual: "Datei-Import" };
+
 const METHOD: Record<string, string> = {
   power: "aus Leistung (NP / FTP)",
   pace: "aus Pace (rTSS)",
@@ -78,7 +80,7 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
         ) : null}
         {a.sourceApp && a.sourceApp in SOURCE_APP_LABEL ? <Badge tone="info">{SOURCE_APP_LABEL[a.sourceApp as SourceAppId]}</Badge> : null}
         {a.deviceName && a.deviceName !== (a.sourceApp ? SOURCE_APP_LABEL[a.sourceApp as SourceAppId] : null) ? <Badge>{a.deviceName}</Badge> : null}
-        {a.sourceApp === "manual" ? null : <Badge>über {a.provider === "garmin" ? "Garmin" : a.provider === "wahoo" ? "Wahoo" : a.provider === "intervals" ? "intervals.icu" : "Datei-Import"}</Badge>}
+        {a.sourceApp === "manual" || (a.provider === "apple" && a.sourceApp === "apple") ? null : <Badge>über {ROUTE_LABEL[a.provider]}</Badge>}
       </div>
       <dl className={`grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border ${metrics.length > 2 ? "sm:grid-cols-3" : ""}`}>
         {metrics.map(([k, v]) => (

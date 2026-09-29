@@ -104,7 +104,7 @@ export function isSameSession(a: Span, b: Span): boolean {
  * is preferred as the source, and the load is recomputed. Matching planned
  * workouts are marked as done.
  */
-export function upsertActivities(user: User, conn: { id: string | null; provider: ProviderId | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number; merged: number } {
+export function upsertActivities(user: User, conn: { id: string | null; provider: ProviderId | "apple" | "manual" }, list: NormalizedActivity[]): { inserted: number; updated: number; merged: number } {
   const db = getDb();
   let inserted = 0;
   let updated = 0;

@@ -46,6 +46,11 @@ describe("connection recommendation", () => {
     expect(r.connections.map((c) => c.id).sort()).toEqual(["intervals", "wahoo"]);
     expect(r.routes.find((x) => x.app.id === "wahoo")!.workouts?.via).toBe("wahoo");
   });
+  it("routes Apple Health through its own import instead of a provider connection", () => {
+    const r = recommendConnections(["apple"], { garmin: false, wahoo: false });
+    expect(r.connections).toEqual([{ id: "apple", apps: ["apple"] }]);
+    expect(r.routes[0].workouts).toBeNull();
+  });
   it("returns nothing for no selection", () => {
     expect(recommendConnections([], { garmin: true, wahoo: true }).connections).toEqual([]);
   });

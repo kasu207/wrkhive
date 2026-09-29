@@ -17,7 +17,7 @@ export interface WahooSelfService {
   scopes: string;
 }
 
-function CopyValue({ label, value }: { label: string; value: string }) {
+export function CopyValue({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div>

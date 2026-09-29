@@ -36,6 +36,13 @@
       "when": 1790684287087,
       "tag": "0004_session_rpe",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790685199769,
+      "tag": "0005_apple_health",
+      "breakpoints": true
     }
   ]
 }

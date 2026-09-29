@@ -38,6 +38,8 @@ const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
 const { pmcFor } = await import("./training");
 const { adaptScheduled, autoAdaptToday, readinessFor, restoreScheduled } = await import("./adapt");
+const { importAppleWorkouts, rotateAppleHealthKey, userByAppleHealthKey, revokeAppleHealthKey } = await import("./apple-health");
+const { POST: appleHealthWebhook } = await import("@/app/api/ingest/apple-health/route");
 
 function makeUser(id: string) {
   const db = getDb();
@@ -335,5 +337,79 @@ describe("coach (Claude)", () => {
     expect(r.engine).toBe("rules");
     expect(r.content).toMatch(/nicht erreichbar/);
     expect(r.payload?.kind).toBe("workout");
+  });
+});
+
+describe("Apple Health", () => {
+  const run = {
+    type: "Running",
+    start: "2026-03-02T06:00:00.000Z",
+    utcOffsetSec: 3600,
+    durationSec: 2700,
+    distanceM: 8600,
+    calories: 510,
+    avgHr: 152,
+    maxHr: 176,
+    source: "Apple Watch von Test",
+  };
+  const webhook = (key: string | null, body: unknown) =>
+    appleHealthWebhook(
+      new Request("http://localhost/api/ingest/apple-health", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(key ? { "api-key": key } : {}) },
+        body: JSON.stringify(body),
+      }) as never,
+    );
+
+  it("imports export workouts idempotently with load and attribution", () => {
+    const user = makeUser("u-apple");
+    const r1 = importAppleWorkouts(user, [run, { ...run, start: "2026-03-03T17:00:00.000Z", type: "MartialArts", distanceM: null, durationSec: 5400 }, { ...run, start: "2026-03-04T07:00:00.000Z", durationSec: 30 }]);
+    expect(r1).toMatchObject({ inserted: 2, skipped: 1 });
+    const r2 = importAppleWorkouts(user, [run]);
+    expect(r2).toMatchObject({ inserted: 0, updated: 1 });
+    const rows = getDb().select().from(schema.activities).where(eq(schema.activities.userId, user.id)).all();
+    const lauf = rows.find((a) => a.sport === "run")!;
+    expect(lauf).toMatchObject({ provider: "apple", sourceApp: "apple", name: "Lauf", date: "2026-03-02", tssMethod: "pace", deviceName: "Apple Watch von Test" });
+    expect(rows.find((a) => a.sport === "other")).toMatchObject({ name: "Kampfsport", tssMethod: "hr" });
+  });
+
+  it("merges a workout another app also wrote into Apple Health", () => {
+    const user = makeUser("u-apple-merge");
+    upsertActivities(user, { id: null, provider: "manual" }, [
+      { externalId: "garmin-fit-1", sport: "ride", name: "Abendrunde", startTime: new Date("2026-03-05T17:00:00Z"), durationSec: 3600, distanceM: 30000, normPower: 200, deviceName: "Edge 540" },
+    ]);
+    const r = importAppleWorkouts(user, [{ ...run, type: "Cycling", start: "2026-03-05T17:00:30.000Z", durationSec: 3590, distanceM: 29900, source: "Garmin Connect" }]);
+    expect(r).toMatchObject({ inserted: 0, merged: 1 });
+    const rows = getDb().select().from(schema.activities).where(eq(schema.activities.userId, user.id)).all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ avgHr: 152, tssMethod: "power" });
+  });
+
+  it("accepts Health Auto Export deliveries only with a valid key", async () => {
+    const user = makeUser("u-hae");
+    const key = rotateAppleHealthKey(user.id);
+    expect(userByAppleHealthKey(key)?.id).toBe(user.id);
+    const payload = {
+      data: {
+        workouts: [
+          { id: "HK-1", name: "Outdoor Run", start: "2026-03-06 07:00:00 +0100", end: "2026-03-06 07:45:00 +0100", duration: 2700, distance: { qty: 8.6, units: "km" }, heartRate: { avg: { qty: 150, units: "bpm" }, max: { qty: 172, units: "bpm" } } },
+        ],
+      },
+    };
+    expect((await webhook(null, payload)).status).toBe(401);
+    expect((await webhook("wh_wrong", payload)).status).toBe(401);
+    const ok = await webhook(key, payload);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ ok: true, workouts: 1, inserted: 1 });
+    const again = await webhook(key, payload);
+    expect(await again.json()).toMatchObject({ inserted: 0, updated: 1 });
+    const metricsOnly = await webhook(key, { data: { metrics: [] } });
+    expect((await metricsOnly.json()).note).toBeTruthy();
+    expect(getDb().select().from(schema.users).where(eq(schema.users.id, user.id)).get()!.appleHealthLastAt).toBeInstanceOf(Date);
+
+    const rotated = rotateAppleHealthKey(user.id);
+    expect((await webhook(key, payload)).status).toBe(401);
+    revokeAppleHealthKey(user.id);
+    expect((await webhook(rotated, payload)).status).toBe(401);
   });
 });

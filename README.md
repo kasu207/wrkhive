@@ -40,12 +40,13 @@ Unter **Geräte** („Apps & Geräte“) zeigt Wrkhive für jede App, woher die 
 
 | App / Gerät | Workouts dorthin | Aktivitäten von dort |
 | --- | --- | --- |
+| **Apple Health** (Apple Watch, iPhone) | nicht möglich (nur native iPhone-Apps dürfen auf die Watch schreiben) | Export der Health-App (einmalig) und laufend über die iPhone-App Health Auto Export |
 | **Wahoo ELEMNT** | direkt (eigene Wahoo-App, siehe unten) oder über intervals.icu | direkt oder über intervals.icu |
 | **Garmin** | direkt (Garmin-Partnerprogramm), über intervals.icu oder FIT per USB | direkt, über intervals.icu oder FIT-Import |
 | **Zwift** | über intervals.icu (offizielle Zwift-Anbindung) oder ZWO-Datei | über intervals.icu oder FIT-Import |
 | **MyWhoosh** | über intervals.icu (offizielle MyWhoosh-Anbindung) | über intervals.icu |
 | **ROUVY** | über intervals.icu („Workout of the day“) oder ZWO-Upload im Webportal | über intervals.icu |
-| **Freeletics** | nicht möglich (keine Schnittstelle) | Apple Health / Health Connect, per Companion-App nach intervals.icu |
+| **Freeletics** | nicht möglich (keine Schnittstelle) | über Apple Health (siehe unten) oder per Companion-App nach intervals.icu |
 
 Jede Aktivität trägt ihre Quell-App (Filter in „Aktivitäten“). Kommt dieselbe Einheit mehrfach an, etwa vom ELEMNT über Wahoo und von MyWhoosh über intervals.icu, oder lädt MyWhoosh eine Fahrt doppelt hoch, führt Wrkhive sie zusammen: gleiche Sportart und Start innerhalb von 5 Minuten oder zeitliche Überschneidung von mindestens der Hälfte (etwa wenn die Uhr vor der Trainings-App gestartet wurde). Fehlende Werte werden ergänzt (Leistung aus der Trainings-App, Puls von der Uhr), die Belastung wird neu berechnet.
 
@@ -60,6 +61,15 @@ Wahoo gibt Workouts nur an registrierte Apps weiter. Für den eigenen Gebrauch r
 3. Client-ID und Client-Secret in den Dialog kopieren, **„Speichern und verbinden“**, bei Wahoo zustimmen.
 
 Danach landen Workouts mit einem Klick auf dem ELEMNT (geplant für heute bis 6 Tage). Die Einrichtung darf nur das erste Konto der Installation vornehmen; weitere Konten verbinden ihr Wahoo-Konto dann mit einem Klick. Das Secret wird verschlüsselt gespeichert. Sind `WAHOO_CLIENT_ID`/`WAHOO_CLIENT_SECRET` gesetzt, haben diese Vorrang. Nimmt Wahoo eine `http://localhost`-Adresse als Redirect-URI nicht an, den HTTPS-Tunnel einrichten (siehe unten) und die `https://`-Adresse verwenden.
+
+### Apple Health
+
+Apple bietet keine Web-Schnittstelle zu Health; HealthKit ist nur für Apps auf dem iPhone zugänglich. Wrkhive holt Workouts deshalb auf zwei Wegen, beide unter **Geräte → Apple Health**:
+
+- **Bisherige Workouts, einmalig:** In der Health-App auf das Profilbild tippen, **„Alle Gesundheitsdaten exportieren“**, die `Export.zip` (oder die entpackte `export.xml`) in Wrkhive auswählen. Die Datei wird im Browser als Datenstrom gelesen, auch mehrere GB; an den Server gehen nur die Workouts (Sportart, Zeit, Dauer, Distanz, Puls, Höhenmeter, Kalorien, bei Rad auch Leistung), keine anderen Gesundheitsdaten. Erneutes Importieren aktualisiert statt zu verdoppeln.
+- **Laufend:** Die iPhone-App [Health Auto Export](https://www.healthyapps.dev/apps/health-auto-export/) sendet neue Workouts per REST-API-Automation an `https://<deine-domain>/api/ingest/apple-health`. Den persönlichen Schlüssel erzeugt Wrkhive (wird nur einmal angezeigt, gespeichert ist nur sein Hash); in der App als Header `api-key` eintragen, Data Type *Workouts*, Format *JSON*, Export Version *2*, ohne Routen, *Batch Requests* an. Automationen sind in der App kostenpflichtig (Premium). iOS gibt Health-Daten nur bei entsperrtem iPhone frei, neue Workouts kommen daher meist bei der nächsten Nutzung des iPhones an. Die URL muss öffentlich per HTTPS erreichbar sein; Wrkhive bildet sie aus `APP_URL` (auf dem Server aus `DOMAIN`).
+
+Workouts anderer Apps, die in Health schreiben (Garmin Connect, Zwift, Freeletics), werden ihrer App zugeordnet und mit Aufzeichnungen aus anderen Quellen zusammengeführt. Kostenlose Alternative für den laufenden Sync: die App „Intervals.icu Companion“ schickt Apple-Health-Workouts an intervals.icu, von dort holt Wrkhive sie.
 
 ### intervals.icu als Brücke (für Zwift, MyWhoosh, ROUVY, Freeletics)
 
@@ -164,7 +174,7 @@ APP=http://localhost:3000 WAHOO_WEBHOOK_TOKEN=mock-wahoo-webhook-token npm run t
 | **Workout-Builder** | Visueller Editor (Drag & Drop, Wiederholungsblöcke, Zonen-Schnellwahl, Trittfrequenz) und **Text-Schnelleingabe**, beide immer synchron. Live-Profil mit Zonenfarben, Dauer, Distanz, TSS und IF. Rückgängig/Wiederholen, Tastenkürzel (Strg+S, Strg+Z). |
 | **Text-Notation** | `Aufwärmen 10min 50-65%`, `5x (3min 110%, Erholung 2min 55%)`, `6x (400m 4:00/km, 90s Pause)`, `3x10 Kniebeuge (Langhantel) 60kg Pause 2min`. Versteht h/min/s/km/m, %, W, Pace, bpm, Z1 bis Z7, GA1/GA2/KB/EB/SB, RPE und rpm. |
 | **Senden an Geräte** | Garmin Connect (Workout plus Kalender), Wahoo (Plan plus geplantes Workout, auf Wunsch als Rollentrainer-Einheit mit ERG-Hinweisen) und intervals.icu (Kalender, weiter an Garmin und Wahoo). Export als **FIT** (offizielles Garmin FIT SDK), **ZWO** (Zwift) und Text. |
-| **Aktivitäten** | Dauer-Sync (Webhooks und Abruf), FIT/ZIP-Import, Quell-App je Aktivität (Garmin, Wahoo, Zwift, MyWhoosh, ROUVY, Freeletics …) mit Filter, Zusammenführen doppelter Aufzeichnungen, Normalized Power, Pulszonen, TSS nach Leistung, Pace oder Puls. |
+| **Aktivitäten** | Dauer-Sync (Webhooks und Abruf), FIT/ZIP-Import, Apple-Health-Import (Export und Health Auto Export), manuelle Erfassung mit Session-RPE (z. B. Kampfsport ohne Uhr), Quell-App je Aktivität (Garmin, Wahoo, Apple Health, Zwift, MyWhoosh, ROUVY, Freeletics …) mit Filter, Zusammenführen doppelter Aufzeichnungen, Normalized Power, Pulszonen, TSS nach Leistung, Pace, Puls oder Session-RPE. |
 | **Apps & Geräte** | Übersicht aller Apps mit Datenfluss und Status, Onboarding mit Empfehlung der nötigen Verbindungen, Einrichtungs-Checkliste auf der Übersicht. |
 | **Anpassung an Belastung** | Tägliche Bereitschaft aus Form und Steigerungsrate, Vorschlag oder automatische Anpassung des Workouts des Tages, Original wiederherstellbar. |
 | **Krafttraining** | 50 Übungen mit FIT- bzw. Garmin-Übungs-IDs, damit Uhren Animationen und Wiederholungszählung zeigen. Sätze, Wiederholungen, Gewicht, Pausen. |
@@ -220,6 +230,7 @@ src/
   db/                   Drizzle-Schema und Verbindung
   lib/workout/          Workout-Modell, Text-Parser, Kennzahlen, Zonen, Exporter (FIT, ZWO, Wahoo, Garmin, intervals.icu), ERG-Prüfung
   lib/fit/              FIT-Aktivitätsimport
+  lib/apple-health.ts   Apple-Health-Export (Stream-Parser) und Health-Auto-Export-Format
   lib/analytics/        TSS, CTL/ATL/TSB, VO2max, Wettkampfprognosen
   lib/coach/            Regelbasierter Workout- und Plangenerator, Coach-Prompt
   lib/server/           Auth, Krypto, Sync, Scheduler, Geräteadapter, Coach (Claude)
@@ -230,9 +241,10 @@ Workouts speichern Intensitäten **relativ** zu den Schwellenwerten (% FTP, % Sc
 
 ## Tests
 
-- `npm test`: 169 Unit- und Integrationstests, u. a.:
+- `npm test`: 194 Unit- und Integrationstests, u. a.:
   - Parser und Exporter; FIT-Workouts werden mit dem offiziellen Garmin-Decoder zurückgelesen
   - FIT-Aktivitätsimport inklusive NP, Pulszonen, ZIP und defekter Aufzeichnungen
+  - Apple-Health-Export (gestreamtes ZIP, auch mit Data Descriptors) und Health-Auto-Export-Webhook v1/v2
   - Belastungsmodelle gegen die Daniels-Tabellen
   - Sync mit echter SQLite-Datenbank und Coach mit gemocktem Claude
 - `npm run test:e2e:wahoo-setup`: 8 Prüfungen der Wahoo-Einrichtung über die Oberfläche (App ohne `WAHOO_CLIENT_ID` starten, `WAHOO_API_BASE`/`WAHOO_AUTHORIZE_URL` auf den Simulator)

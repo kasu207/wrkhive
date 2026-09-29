@@ -10,10 +10,10 @@ import { Field, Input } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { AppMark } from "@/components/app-mark";
-import { APPS, recommendConnections, type AppInfo, type ConnectionId } from "@/lib/apps";
+import { APPS, recommendConnections, type AppInfo, type SetupId } from "@/lib/apps";
 import { cn } from "@/lib/cn";
 
-const CONNECTION_LABEL: Record<ConnectionId, string> = { intervals: "intervals.icu", garmin: "Garmin", wahoo: "Wahoo" };
+const CONNECTION_LABEL: Record<SetupId, string> = { intervals: "intervals.icu", garmin: "Garmin", wahoo: "Wahoo", apple: "Der Apple-Health-Import" };
 const STEPS = ["Apps und Geräte", "Schwellenwerte", "Dein Weg"] as const;
 
 /** Parses "4:45" (min/km) into seconds per km, or null. */

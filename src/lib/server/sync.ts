@@ -7,12 +7,13 @@ import { addDays, type ISODate } from "@/lib/dates";
 import { newId } from "@/lib/id";
 import { decrypt, encrypt } from "./crypto";
 import { detectSourceApp, isTrainingApp, type SourceAppId } from "@/lib/apps";
-import { generateDemoActivities } from "./providers/demo";
+import { generateDemoActivities, generateDemoWellness } from "./providers/demo";
 import { garminAdapter } from "./providers/garmin";
 import { intervalsAdapter } from "./providers/intervals";
 import { ProviderError, type NormalizedActivity, type PlannedOnProvider, type ProviderAdapter, type ProviderId } from "./providers/types";
 import { wahooAdapter } from "./providers/wahoo";
 import { demoConnectionsAllowed } from "./access";
+import { upsertWellness } from "./wellness";
 
 export const PROVIDERS: Record<ProviderId, ProviderAdapter> = { garmin: garminAdapter, wahoo: wahooAdapter, intervals: intervalsAdapter };
 
@@ -72,7 +73,7 @@ function markError(connectionId: string, e: unknown) {
 }
 
 /** Metrics a duplicate from another source may fill in when the kept record lacks them. */
-const MERGEABLE = ["movingSec", "distanceM", "elevationGainM", "avgHr", "maxHr", "avgPower", "normPower", "avgCadence", "avgSpeed", "calories", "hrZoneSec"] as const;
+const MERGEABLE = ["movingSec", "distanceM", "elevationGainM", "avgHr", "maxHr", "avgPower", "normPower", "avgCadence", "avgSpeed", "calories", "hrZoneSec", "decouplingPct", "bests"] as const;
 
 /** Two recordings of the same sport are one session when they start within this window ... */
 const DUPLICATE_WINDOW_MS = 5 * 60_000;
@@ -139,6 +140,8 @@ export function upsertActivities(user: User, conn: { id: string | null; provider
         tss: load.tss,
         tssMethod: load.method,
         hrZoneSec: a.hrZoneSec ?? null,
+        decouplingPct: a.decouplingPct ?? null,
+        bests: a.bests ?? null,
         vo2maxEst: vo2Of(a),
         deviceName: a.deviceName ?? null,
         sourceApp,
@@ -285,6 +288,7 @@ async function runSync(conn: DeviceConnection, opts: { full?: boolean }): Promis
     const to = now.getHours() >= 20 ? today : addDays(today, -1);
     const list = generateDemoActivities(user.id, from, to, user, historyStart);
     const r = upsertActivities(user, conn, list);
+    upsertWellness(user.id, generateDemoWellness(user.id, from, today, user), "demo");
     db.update(deviceConnections).set({ lastSyncAt: now, status: "connected", statusMessage: null }).where(eq(deviceConnections.id, conn.id)).run();
     return { ok: true, inserted: r.inserted, message: r.inserted ? `${r.inserted} neue Aktivitäten (Demo-Daten).` : "Alles aktuell." };
   }
@@ -295,6 +299,7 @@ async function runSync(conn: DeviceConnection, opts: { full?: boolean }): Promis
     const since = opts.full || !conn.lastSyncAt ? new Date(now.getTime() - HISTORY_DAYS * 86_400_000) : new Date(conn.lastSyncAt.getTime() - 2 * 86_400_000);
     const result = await adapter.sync(token, conn, since);
     const r = upsertActivities(user, conn, result.activities);
+    if (result.wellness?.length) upsertWellness(user.id, result.wellness, conn.provider);
     if (result.planned) {
       const applied = applyProviderMoves(user, conn, result.planned);
       // Keep the other copies (e.g. a direct Wahoo delivery) on the same day as the moved one.

@@ -1,6 +1,18 @@
 import { strToU8, Zip, ZipDeflate, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { appleSport, appleWorkoutName, createExportScanner, parseAppleDate, parseAutoExportPayload, parseExportWorkout, readAppleHealthExport, type AppleWorkout } from "./apple-health";
+import {
+  appleSport,
+  appleWorkoutName,
+  createExportScanner,
+  dailyFromSamples,
+  parseAppleDate,
+  parseAutoExportMetrics,
+  parseAutoExportPayload,
+  parseExportWorkout,
+  readAppleHealthExport,
+  type AppleSample,
+  type AppleWorkout,
+} from "./apple-health";
 
 const RUN_IOS17 = `<Workout workoutActivityType="HKWorkoutActivityTypeRunning" duration="45.5" durationUnit="min" sourceName="Apple Watch von Philipp" sourceVersion="10.0" device="&lt;&lt;HKDevice: 0x28&gt;, name:Apple Watch&gt;" creationDate="2024-05-04 08:47:00 +0200" startDate="2024-05-04 08:00:00 +0200" endDate="2024-05-04 08:46:00 +0200">
   <MetadataEntry key="HKIndoorWorkout" value="0"/>
@@ -199,7 +211,58 @@ describe("Health Auto Export", () => {
   });
   it("skips invalid entries and recognises metric-only payloads", () => {
     expect(parseAutoExportPayload({ data: { workouts: [{ name: "Run" }, null] } })).toMatchObject({ workouts: [], skipped: 2 });
-    expect(parseAutoExportPayload({ data: { metrics: [] } }).metricsOnly).toBe(true);
+    expect(parseAutoExportPayload({ data: { metrics: [] } }).empty).toBe(true);
     expect(parseAutoExportPayload("nonsense").workouts).toEqual([]);
+  });
+});
+
+const RECORDS_XML = `<HealthData locale="de_DE">
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Apple Watch" unit="count/min" startDate="2024-05-04 07:00:00 +0200" endDate="2024-05-04 07:00:00 +0200" value="61"/>
+ <Record type="HKQuantityTypeIdentifierRestingHeartRate" sourceName="Apple Watch" unit="count/min" creationDate="2024-05-04 20:00:00 +0200" startDate="2024-05-04 00:01:00 +0200" endDate="2024-05-04 19:58:00 +0200" value="51"/>
+ <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" unit="ms" startDate="2024-05-04 03:10:00 +0200" endDate="2024-05-04 03:11:00 +0200" value="48.5">
+  <HeartRateVariabilityMetadataList>
+   <InstantaneousBeatsPerMinute bpm="55" time="3:10:02,11 AM"/>
+  </HeartRateVariabilityMetadataList>
+ </Record>
+ <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" unit="ms" startDate="2024-05-04 05:10:00 +0200" endDate="2024-05-04 05:11:00 +0200" value="55.5"/>
+ <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Waage" unit="lb" startDate="2024-05-04 07:30:00 +0200" endDate="2024-05-04 07:30:00 +0200" value="165"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" startDate="2024-05-03 23:00:00 +0200" endDate="2024-05-04 02:00:00 +0200" value="HKCategoryValueSleepAnalysisAsleepCore"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" startDate="2024-05-04 02:00:00 +0200" endDate="2024-05-04 02:20:00 +0200" value="HKCategoryValueSleepAnalysisAwake"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" startDate="2024-05-04 02:20:00 +0200" endDate="2024-05-04 06:20:00 +0200" value="HKCategoryValueSleepAnalysisAsleepDeep"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="iPhone" startDate="2024-05-03 23:30:00 +0200" endDate="2024-05-04 06:00:00 +0200" value="HKCategoryValueSleepAnalysisInBed"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="iPhone" startDate="2024-05-03 23:30:00 +0200" endDate="2024-05-04 05:30:00 +0200" value="HKCategoryValueSleepAnalysisAsleepUnspecified"/>
+</HealthData>`;
+
+describe("Apple Health daily values", () => {
+  it("reads resting heart rate, HRV, weight and sleep records in any chunking", () => {
+    for (const size of [7, 64, 1000, RECORDS_XML.length]) {
+      const samples: AppleSample[] = [];
+      const scanner = createExportScanner(
+        () => undefined,
+        (s) => samples.push(s),
+      );
+      for (let i = 0; i < RECORDS_XML.length; i += size) scanner.push(RECORDS_XML.slice(i, i + size));
+      scanner.end();
+      const [day] = dailyFromSamples(samples);
+      // Heart rate samples are ignored; SDNN is averaged; sleep takes the longest source (Watch: 3 h + 4 h).
+      expect(day).toEqual({ date: "2024-05-04", restingHr: 51, hrvSdnn: 52, sleepSec: 7 * 3600, weightKg: 74.8 });
+    }
+  });
+
+  it("reads Health Auto Export metrics, aggregated and as raw sleep stages", () => {
+    const samples = parseAutoExportMetrics([
+      { name: "resting_heart_rate", units: "count/min", data: [{ date: "2026-03-06 00:00:00 +0100", qty: 49, source: "Apple Watch" }] },
+      { name: "heart_rate_variability", units: "ms", data: [{ date: "2026-03-06 00:00:00 +0100", qty: 61.2 }] },
+      { name: "weight_body_mass", units: "kg", data: [{ date: "2026-03-06 07:00:00 +0100", qty: 71.4 }] },
+      { name: "sleep_analysis", units: "hr", data: [{ date: "2026-03-06 00:00:00 +0100", totalSleep: 7.25, inBed: 8, core: 4, deep: 1.25, rem: 2 }] },
+      { name: "sleep_analysis", units: "hr", data: [{ startDate: "2026-03-06 23:00:00 +0100", endDate: "2026-03-07 03:00:00 +0100", value: "Core", qty: 4 }, { startDate: "2026-03-07 03:00:00 +0100", endDate: "2026-03-07 04:00:00 +0100", value: "Awake", qty: 1 }, { startDate: "2026-03-07 04:00:00 +0100", endDate: "2026-03-07 06:30:00 +0100", value: "REM", qty: 2.5 }] },
+      { name: "step_count", units: "count", data: [{ date: "2026-03-06 00:00:00 +0100", qty: 9000 }] },
+    ]);
+    expect(dailyFromSamples(samples)).toEqual([
+      { date: "2026-03-06", restingHr: 49, hrvSdnn: 61.2, sleepSec: 7.25 * 3600, weightKg: 71.4 },
+      { date: "2026-03-07", restingHr: null, hrvSdnn: null, sleepSec: 6.5 * 3600, weightKg: null },
+    ]);
+    const payload = parseAutoExportPayload({ data: { metrics: [{ name: "resting_heart_rate", units: "count/min", data: [{ date: "2026-03-06 00:00:00 +0100", qty: 49 }] }] } });
+    expect(payload).toMatchObject({ workouts: [], empty: false, daily: [{ date: "2026-03-06", restingHr: 49 }] });
   });
 });

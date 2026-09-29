@@ -2,7 +2,7 @@ import "server-only";
 import { detectSourceApp, type SourceAppId } from "@/lib/apps";
 import { encodeIntervalsWorkout, intervalsCompatibility, intervalsMovingTime, INTERVALS_SPORT_TYPE } from "@/lib/workout/export/intervals";
 import { providerFetch } from "./http";
-import { ProviderError, type NormalizedActivity, type ProviderAdapter } from "./types";
+import { ProviderError, type NormalizedActivity, type ProviderAdapter, type WellnessInput } from "./types";
 
 /**
  * intervals.icu as a bridge to the devices: the athlete connects Garmin
@@ -77,6 +77,8 @@ export interface IntervalsActivity {
   average_cadence?: number | null;
   average_speed?: number | null;
   calories?: number | null;
+  /** Aerobic decoupling (Pw:HR or Pa:HR) in percent as intervals.icu computes it. */
+  decoupling?: number | null;
   device_name?: string | null;
   /** Where intervals.icu got the activity from, e.g. GARMIN_CONNECT, WAHOO, ZWIFT, OAUTH_CLIENT, UPLOAD. */
   source?: string;
@@ -132,9 +134,27 @@ export function normalizeIntervalsActivity(a: IntervalsActivity): NormalizedActi
     avgCadence: posInt(a.average_cadence),
     avgSpeed: pos(a.average_speed),
     calories: posInt(a.calories),
+    decouplingPct: typeof a.decoupling === "number" && Number.isFinite(a.decoupling) && Math.abs(a.decoupling) < 50 ? Math.round(a.decoupling * 10) / 10 : null,
     deviceName: a.device_name?.trim() || a.oauth_client_name?.trim() || "intervals.icu",
     sourceApp: detectSourceApp({ hints: [a.device_name, a.oauth_client_name], name: a.name, fallback: a.source ? (SOURCE[a.source] ?? null) : null }),
   };
+}
+
+/** Daily wellness record of intervals.icu (the id is the calendar day). */
+export interface IntervalsWellness {
+  id?: string;
+  restingHR?: number | null;
+  /** rMSSD in ms. */
+  hrv?: number | null;
+  hrvSDNN?: number | null;
+  sleepSecs?: number | null;
+  weight?: number | null;
+}
+
+export function normalizeIntervalsWellness(w: IntervalsWellness): WellnessInput | null {
+  if (typeof w.id !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(w.id)) return null;
+  const row = { date: w.id, restingHr: pos(w.restingHR), hrv: pos(w.hrv), hrvSdnn: pos(w.hrvSDNN), sleepSec: pos(w.sleepSecs), weightKg: pos(w.weight) };
+  return row.restingHr || row.hrv || row.hrvSdnn || row.sleepSec || row.weightKg ? row : null;
 }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -252,7 +272,17 @@ export const intervalsAdapter: ProviderAdapter = {
     const items = (Array.isArray(events) ? events : [])
       .filter((e) => e.id !== undefined && typeof e.start_date_local === "string" && (!e.category || e.category === "WORKOUT"))
       .map((e) => ({ id: String(e.id), date: e.start_date_local!.slice(0, 10) }));
-    return { activities, planned: { key: "event", items, complete: { from, to } } };
+    // Health values (resting HR, HRV, sleep, weight) that the athlete's watch or apps sent to intervals.icu.
+    // Optional: a failure here must not block the activities.
+    let wellness: WellnessInput[] = [];
+    try {
+      const wr = await providerFetch("intervals.icu", `${API}/athlete/${athleteId}/wellness?${q}`, { headers: headers(apiKey), timeoutMs: 60_000 });
+      const list = (await wr.json()) as IntervalsWellness[];
+      wellness = (Array.isArray(list) ? list : []).map(normalizeIntervalsWellness).filter((w): w is WellnessInput => w !== null);
+    } catch (e) {
+      if (e instanceof ProviderError && e.authExpired) throw e;
+    }
+    return { activities, wellness, planned: { key: "event", items, complete: { from, to } } };
   },
 
   // Personal API keys are revoked by the athlete in intervals.icu itself.

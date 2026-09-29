@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activities, deliveries, deviceConnections, users } from "@/db/schema";
+import { activities, deliveries, deviceConnections, users, wellness } from "@/db/schema";
 import { demoEnabled } from "./access";
 
 /**
@@ -43,6 +43,7 @@ export function purgeStrayDemoData(): { users: number; connections: number; acti
         .delete(activities)
         .where(and(eq(activities.userId, userId), ids.length ? or(eq(activities.sourceApp, "demo"), inArray(activities.connectionId, ids)) : eq(activities.sourceApp, "demo")))
         .run().changes;
+      tx.delete(wellness).where(and(eq(wellness.userId, userId), eq(wellness.source, "demo"))).run();
       for (const c of mine) tx.delete(deliveries).where(and(eq(deliveries.userId, userId), eq(deliveries.provider, c.provider))).run();
       if (ids.length) tx.delete(deviceConnections).where(inArray(deviceConnections.id, ids)).run();
       tx.update(deviceConnections).set({ lastSyncAt: null }).where(and(eq(deviceConnections.userId, userId), eq(deviceConnections.mode, "live"))).run();

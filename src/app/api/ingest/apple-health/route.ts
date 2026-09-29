@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { parseAutoExportPayload } from "@/lib/apple-health";
-import { importAppleWorkouts, userByAppleHealthKey } from "@/lib/server/apple-health";
+import { importAppleDaily, importAppleWorkouts, userByAppleHealthKey } from "@/lib/server/apple-health";
 import { rateLimit } from "@/lib/server/rate-limit";
 
 export const maxDuration = 120;
@@ -20,7 +20,8 @@ function keyOf(request: NextRequest): string {
 /**
  * Webhook for the iOS app "Health Auto Export" (REST API automation, JSON).
  * Authenticated with the per-user key from the devices page, sent as header
- * "api-key". Health metrics in the payload are ignored; only workouts count.
+ * "api-key". Takes workouts and the daily metrics resting heart rate, HRV,
+ * sleep and weight.
  */
 export async function POST(request: NextRequest) {
   const key = keyOf(request);
@@ -38,8 +39,9 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Ungültiges JSON. Exportformat JSON wählen." }, { status: 400 });
   }
-  const { workouts, skipped, metricsOnly } = parseAutoExportPayload(json);
+  const { workouts, daily, skipped, empty } = parseAutoExportPayload(json);
   const result = importAppleWorkouts(user, workouts);
+  const days = importAppleDaily(user, daily);
   getDb().update(users).set({ appleHealthLastAt: new Date() }).where(eq(users.id, user.id)).run();
   return NextResponse.json({
     ok: true,
@@ -48,6 +50,7 @@ export async function POST(request: NextRequest) {
     updated: result.updated,
     merged: result.merged,
     skipped: skipped + result.skipped,
-    ...(metricsOnly ? { note: "Keine Workouts im Paket. In der Automation den Datentyp Workouts wählen." } : {}),
+    days,
+    ...(empty ? { note: "Keine Workouts oder Gesundheitsdaten im Paket. In der Automation Workouts oder die Metriken Ruhepuls, Herzfrequenzvariabilität, Schlafanalyse und Gewicht wählen." } : {}),
   });
 }

@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { getDb } from "@/db";
-import { activities, deviceConnections, providerApps } from "@/db/schema";
+import { activities, deviceConnections, providerApps, wellness } from "@/db/schema";
 import { isInstallationOwner, requireUser } from "@/lib/server/auth";
 import { beginConnect, createConnection } from "@/lib/server/connections";
 import { decrypt, encrypt } from "@/lib/server/crypto";
@@ -72,7 +72,10 @@ export async function disconnectDevice(provider: string, removeActivities: boole
       console.warn(`[${provider}] revoke failed`, e);
     }
   }
-  if (removeActivities) db.delete(activities).where(and(eq(activities.userId, user.id), eq(activities.provider, provider))).run();
+  if (removeActivities) {
+    db.delete(activities).where(and(eq(activities.userId, user.id), eq(activities.provider, provider))).run();
+    db.delete(wellness).where(and(eq(wellness.userId, user.id), eq(wellness.source, conn.mode === "demo" ? "demo" : provider))).run();
+  }
   db.delete(deviceConnections).where(eq(deviceConnections.id, conn.id)).run();
   revalidatePath("/devices");
   revalidatePath("/dashboard");

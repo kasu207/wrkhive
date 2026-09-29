@@ -62,6 +62,14 @@ describe("FIT activity import", () => {
     expect(a.name).toBe("Morgenrunde");
   });
 
+  it("keeps the power curve of the session for best efforts", () => {
+    const a = decodeFitActivity(rideFit({ session: true }), "ride.fit", 165).activities[0];
+    // 5 min at 300 W is the hardest part; 20 min does not fit into a 15 min ride.
+    expect(a.bests).toEqual({ power: { "5": 300, "60": 300, "300": 300 } });
+    // Decoupling needs at least 20 minutes.
+    expect(a.decouplingPct).toBeNull();
+  });
+
   it("rebuilds a missing session summary from records and filters altitude spikes", () => {
     const r = decodeFitActivity(rideFit({ session: false, manufacturer: "garmin", spikes: true }), "crash.fit", 165);
     expect(r.errors).toEqual([]);

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import type { Activity } from "@/db/schema";
+import { PACE_DISTANCES, PACE_LABEL, POWER_DURATIONS, POWER_LABEL } from "@/lib/analytics/bests";
 import { formatDistance, formatDuration, formatNumber, formatPace, formatSpeedKmh } from "@/lib/format";
 import { SOURCE_APP_LABEL, type SourceAppId } from "@/lib/apps";
 
@@ -54,6 +55,17 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
   if (a.rpe) metrics.push(["Anstrengung (RPE)", `${a.rpe} / 10`]);
   if (a.calories) metrics.push(["Kalorien", `${formatNumber(a.calories, 0)} kcal`]);
   if (a.vo2maxEst) metrics.push(["VO2max (effektiv)", formatNumber(a.vo2maxEst, 1)]);
+  const efOutput = a.sport === "ride" ? (a.normPower ?? a.avgPower) : a.sport === "run" && a.avgSpeed ? a.avgSpeed * 60 : null;
+  if (efOutput && a.avgHr && (a.sport === "ride" || a.sport === "run")) metrics.push(["Effizienz", `${formatNumber(efOutput / a.avgHr, 2)} ${a.sport === "ride" ? "W" : "m/min"} pro Schlag`]);
+  if (a.decouplingPct !== null) metrics.push(["Aerobe Entkopplung", `${formatNumber(a.decouplingPct, 1)} %${a.decouplingPct < 5 ? " (stabil)" : ""}`]);
+  for (const s of POWER_DURATIONS) {
+    const w = a.bests?.power?.[String(s)];
+    if (w && s >= 60) metrics.push([`Beste ${POWER_LABEL[s]}`, `${w} W`]);
+  }
+  for (const m of PACE_DISTANCES) {
+    const sec = a.bests?.pace?.[String(m)];
+    if (sec) metrics.push([`Schnellster ${PACE_LABEL[m]}`, `${formatDuration(sec)} (${formatPace(sec / (m / 1000))} /km)`]);
+  }
 
   return (
     <Dialog

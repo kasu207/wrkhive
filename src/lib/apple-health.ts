@@ -11,7 +11,9 @@
  *    per-user webhook, continuously in the background.
  *
  * Both are reduced to `AppleWorkout`, the wire format of the import endpoint.
- * Everything here is pure and runs in the browser as well as on the server.
+ * Daily health values (resting heart rate, HRV, sleep, weight) are reduced
+ * to `AppleDaily` the same way. Everything here is pure and runs in the
+ * browser as well as on the server.
  */
 import { Unzip, UnzipInflate } from "fflate";
 
@@ -34,6 +36,25 @@ export interface AppleWorkout {
   source?: string | null;
   /** HealthKit UUID when known (Health Auto Export v2). */
   id?: string | null;
+}
+
+/** Daily health values; HealthKit HRV is SDNN (Apple Watch), not rMSSD. */
+export interface AppleDaily {
+  date: string;
+  restingHr?: number | null;
+  hrvSdnn?: number | null;
+  sleepSec?: number | null;
+  weightKg?: number | null;
+}
+
+/** One reading before it is reduced to a day. */
+export interface AppleSample {
+  kind: "restingHr" | "hrvSdnn" | "weightKg" | "sleep";
+  /** Local calendar day; sleep counts for the day it ends. */
+  date: string;
+  /** bpm, ms, kg or seconds asleep. */
+  value: number;
+  source?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +252,68 @@ function tagEnd(s: string, from: number): number {
   return -1;
 }
 
-const WORKOUT_START = /<Workout[\s>/]/g;
+const WORKOUT_START = /<Workout[\s>/]|<Record type="HK(?:QuantityTypeIdentifier(?:RestingHeartRate|HeartRateVariabilitySDNN|BodyMass)|CategoryTypeIdentifierSleepAnalysis)"/g;
+/** Characters kept between chunks so a start tag split across chunks is still found. */
+const TAIL = 128;
+
+const ASLEEP = /^HKCategoryValueSleepAnalysisAsleep/;
+
+/** Reads the start tag of a health <Record> (the only part that carries the value). */
+export function parseExportRecord(head: string): AppleSample | null {
+  const a = attributes(head);
+  const type = (a.type ?? "").replace(/^HK(Quantity|Category)TypeIdentifier/, "");
+  const start = parseAppleDate(a.startDate);
+  if (!start || !a.startDate) return null;
+  const source = a.sourceName ?? null;
+  if (type === "SleepAnalysis") {
+    const end = parseAppleDate(a.endDate);
+    if (!end || !a.endDate || !ASLEEP.test(a.value ?? "")) return null;
+    const sec = (end.date.getTime() - start.date.getTime()) / 1000;
+    return sec > 0 ? { kind: "sleep", date: a.endDate.slice(0, 10), value: sec, source } : null;
+  }
+  const value = num(a.value);
+  if (value === null || value <= 0) return null;
+  const date = a.startDate.slice(0, 10);
+  if (type === "RestingHeartRate") return { kind: "restingHr", date, value, source };
+  if (type === "HeartRateVariabilitySDNN") return { kind: "hrvSdnn", date, value, source };
+  if (type === "BodyMass") {
+    const unit = (a.unit ?? "kg").toLowerCase();
+    const kg = unit === "lb" ? value * 0.45359237 : unit === "g" ? value / 1000 : unit === "kg" ? value : null;
+    return kg ? { kind: "weightKg", date, value: kg, source } : null;
+  }
+  return null;
+}
+
+/**
+ * Reduces readings to one value per day: the mean for resting heart rate and
+ * HRV, the last reading for weight, and for sleep the longest total of any
+ * single source (iPhone and Watch both record the same night).
+ */
+export function dailyFromSamples(samples: AppleSample[]): AppleDaily[] {
+  const days = new Map<string, { rhr: number[]; hrv: number[]; weight: number | null; sleep: Map<string, number> }>();
+  for (const s of samples) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) continue;
+    let d = days.get(s.date);
+    if (!d) days.set(s.date, (d = { rhr: [], hrv: [], weight: null, sleep: new Map() }));
+    if (s.kind === "restingHr") d.rhr.push(s.value);
+    else if (s.kind === "hrvSdnn") d.hrv.push(s.value);
+    else if (s.kind === "weightKg") d.weight = s.value;
+    else d.sleep.set(s.source ?? "", (d.sleep.get(s.source ?? "") ?? 0) + s.value);
+  }
+  const avg = (v: number[]) => (v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null);
+  return [...days.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([date, d]) => {
+      const sleep = d.sleep.size ? Math.max(...d.sleep.values()) : null;
+      return {
+        date,
+        restingHr: avg(d.rhr),
+        hrvSdnn: avg(d.hrv),
+        sleepSec: sleep ? Math.round(Math.min(sleep, 16 * 3600)) : null,
+        weightKg: d.weight === null ? null : Math.round(d.weight * 10) / 10,
+      };
+    });
+}
 const WORKOUT_CLOSE = "</Workout>";
 /** Safety limit for a single element (routes are separate GPX files, so real elements are small). */
 const MAX_ELEMENT = 4 * 1024 * 1024;
@@ -240,7 +322,7 @@ const MAX_ELEMENT = 4 * 1024 * 1024;
  * Incremental scanner for export.xml: feed decoded text chunks, get parsed
  * workouts. Keeps only the unfinished element in memory.
  */
-export function createExportScanner(onWorkout: (w: AppleWorkout) => void) {
+export function createExportScanner(onWorkout: (w: AppleWorkout) => void, onSample?: (s: AppleSample) => void) {
   let buf = "";
   let skipped = 0;
   const drain = (final: boolean) => {
@@ -248,8 +330,8 @@ export function createExportScanner(onWorkout: (w: AppleWorkout) => void) {
       WORKOUT_START.lastIndex = 0;
       const m = WORKOUT_START.exec(buf);
       if (!m) {
-        // Keep a tail in case "<Workout" is split across chunks.
-        buf = final ? "" : buf.slice(-16);
+        // Keep a tail in case a start tag is split across chunks.
+        buf = final ? "" : buf.slice(-TAIL);
         return;
       }
       const start = m.index;
@@ -258,6 +340,13 @@ export function createExportScanner(onWorkout: (w: AppleWorkout) => void) {
         buf = buf.slice(start);
         if (buf.length > MAX_ELEMENT) buf = "";
         return;
+      }
+      if (m[0].startsWith("<Record")) {
+        // Health readings: the start tag holds the value; nested metadata is skipped.
+        const sample = parseExportRecord(buf.slice(start, headEnd + 1));
+        if (sample) onSample?.(sample);
+        buf = buf.slice(headEnd + 1);
+        continue;
       }
       let endIdx: number;
       if (buf[headEnd - 1] === "/") endIdx = headEnd + 1;
@@ -302,9 +391,13 @@ export const isExportXml = (name: string) => /(^|\/)export\.xml$/i.test(name) &&
 export async function readAppleHealthExport(
   file: { name: string; size: number; stream(): ReadableStream<Uint8Array> },
   onProgress?: (fraction: number) => void,
-): Promise<{ workouts: AppleWorkout[]; skipped: number; foundXml: boolean }> {
+): Promise<{ workouts: AppleWorkout[]; daily: AppleDaily[]; skipped: number; foundXml: boolean }> {
   const workouts: AppleWorkout[] = [];
-  const scanner = createExportScanner((w) => workouts.push(w));
+  const samples: AppleSample[] = [];
+  const scanner = createExportScanner(
+    (w) => workouts.push(w),
+    (s) => samples.push(s),
+  );
   const decoder = new TextDecoder("utf-8");
   const isZip = /\.zip$/i.test(file.name);
   let foundXml = !isZip;
@@ -361,7 +454,7 @@ export async function readAppleHealthExport(
   else scanner.push(decoder.decode());
   if (error) throw error;
   const { skipped } = scanner.end();
-  return { workouts, skipped, foundXml };
+  return { workouts, daily: dailyFromSamples(samples), skipped, foundXml };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,18 +527,71 @@ export function parseAutoExportWorkout(raw: unknown): AppleWorkout | null {
   };
 }
 
-/** Workouts of a Health Auto Export payload ({ data: { workouts: [...] } }); metrics are ignored. */
-export function parseAutoExportPayload(body: unknown): { workouts: AppleWorkout[]; skipped: number; metricsOnly: boolean } {
+const SLEEP_STAGES = ["core", "deep", "rem"] as const;
+const ASLEEP_VALUE = /^(asleep|core|deep|rem)/i;
+
+/** Hours (HAE default), minutes or seconds to seconds. */
+function toSeconds(value: number, unit: string | null): number {
+  const u = (unit ?? "hr").toLowerCase();
+  return u.startsWith("min") ? value * 60 : u === "s" || u.startsWith("sec") ? value : value * 3600;
+}
+
+/**
+ * Health metrics of a Health Auto Export payload: resting_heart_rate,
+ * heart_rate_variability (SDNN), weight_body_mass and sleep_analysis, both
+ * aggregated per day (totalSleep / asleep / stages) and as raw stage entries.
+ */
+export function parseAutoExportMetrics(metrics: unknown): AppleSample[] {
+  if (!Array.isArray(metrics)) return [];
+  const out: AppleSample[] = [];
+  for (const m of metrics) {
+    if (!m || typeof m !== "object") continue;
+    const { name, units: unit, data } = m as { name?: unknown; units?: unknown; data?: unknown };
+    if (typeof name !== "string" || !Array.isArray(data)) continue;
+    const metricUnit = typeof unit === "string" ? unit : null;
+    for (const raw of data) {
+      if (!raw || typeof raw !== "object") continue;
+      const e = raw as Record<string, unknown>;
+      const source = typeof e.source === "string" ? e.source : null;
+      const day = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
+      const value = num(e.qty) ?? num(e.Avg) ?? num(e.avg);
+      if (name === "resting_heart_rate" || name === "heart_rate_variability") {
+        const date = day(e.date);
+        if (date && value && value > 0) out.push({ kind: name === "resting_heart_rate" ? "restingHr" : "hrvSdnn", date, value, source });
+      } else if (name === "weight_body_mass") {
+        const date = day(e.date);
+        const u = (metricUnit ?? "kg").toLowerCase();
+        const kg = value && value > 0 ? (u === "lb" || u === "lbs" ? value * 0.45359237 : u === "kg" ? value : null) : null;
+        if (date && kg) out.push({ kind: "weightKg", date, value: kg, source });
+      } else if (name === "sleep_analysis") {
+        if (typeof e.value === "string") {
+          // Unaggregated stage entry.
+          const date = day(e.endDate) ?? day(e.date);
+          if (date && value && value > 0 && ASLEEP_VALUE.test(e.value)) out.push({ kind: "sleep", date, value: toSeconds(value, metricUnit), source });
+          continue;
+        }
+        const date = day(e.date) ?? day(e.sleepEnd);
+        const stages = SLEEP_STAGES.map((k) => num(e[k])).filter((v): v is number => v !== null && v > 0);
+        const hours = num(e.totalSleep) ?? num(e.asleep) ?? (stages.length ? stages.reduce((a, b) => a + b, 0) : null);
+        if (date && hours && hours > 0) out.push({ kind: "sleep", date, value: toSeconds(hours, metricUnit), source });
+      }
+    }
+  }
+  return out;
+}
+
+/** Workouts and daily health values of a Health Auto Export payload ({ data: { workouts, metrics } }). */
+export function parseAutoExportPayload(body: unknown): { workouts: AppleWorkout[]; daily: AppleDaily[]; skipped: number; empty: boolean } {
   const data = body && typeof body === "object" ? (body as { data?: unknown }).data : null;
   const list = data && typeof data === "object" ? (data as { workouts?: unknown }).workouts : null;
   const metrics = data && typeof data === "object" ? (data as { metrics?: unknown }).metrics : null;
-  if (!Array.isArray(list)) return { workouts: [], skipped: 0, metricsOnly: Array.isArray(metrics) };
+  const daily = dailyFromSamples(parseAutoExportMetrics(metrics));
   const workouts: AppleWorkout[] = [];
   let skipped = 0;
-  for (const raw of list) {
+  for (const raw of Array.isArray(list) ? list : []) {
     const w = parseAutoExportWorkout(raw);
     if (w) workouts.push(w);
     else skipped++;
   }
-  return { workouts, skipped, metricsOnly: false };
+  return { workouts, daily, skipped, empty: !Array.isArray(list) && !daily.length };
 }

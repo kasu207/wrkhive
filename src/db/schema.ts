@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { ActivityBests } from "@/lib/analytics/bests";
+import type { DashboardLayout } from "@/lib/dashboard";
 import type { WorkoutStructure } from "@/lib/workout/types";
 
 const createdAt = () =>
@@ -33,6 +35,8 @@ export const users = sqliteTable(
     appleHealthKeyHash: text("apple_health_key_hash"),
     /** Last delivery from Health Auto Export. */
     appleHealthLastAt: integer("apple_health_last_at", { mode: "timestamp_ms" }),
+    /** Widgets on the athlete's dashboard in display order; null = default layout (lib/dashboard.ts). */
+    dashboard: text("dashboard", { mode: "json" }).$type<DashboardLayout>(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_apple_health_key_idx").on(t.appleHealthKeyHash)],
@@ -220,6 +224,10 @@ export const activities = sqliteTable(
     /** Seconds per heart-rate zone 1..5 when available. */
     hrZoneSec: text("hr_zone_sec", { mode: "json" }).$type<number[]>(),
     vo2maxEst: real("vo2max_est"),
+    /** Aerobic decoupling (Pa:Hr / Pw:Hr) of the second half against the first, in percent; from the record stream. */
+    decouplingPct: real("decoupling_pct"),
+    /** Best power and fastest distances within the session (lib/analytics/bests.ts). */
+    bests: text("bests", { mode: "json" }).$type<ActivityBests>(),
     deviceName: text("device_name"),
     /** App or device the activity was recorded with (lib/apps.ts), independent of the sync route. */
     sourceApp: text("source_app"),
@@ -229,6 +237,39 @@ export const activities = sqliteTable(
     uniqueIndex("activities_provider_external_idx").on(t.userId, t.provider, t.externalId),
     index("activities_user_date_idx").on(t.userId, t.date),
   ],
+);
+
+/**
+ * Daily health values, one row per athlete and calendar day. Device data
+ * (Apple Health, Garmin, intervals.icu) and the morning check-in fill the
+ * same row; a value that arrives later replaces the earlier one.
+ */
+export const wellness = sqliteTable(
+  "wellness",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Local calendar day (YYYY-MM-DD); sleep counts for the day it ends. */
+    date: text("date").notNull(),
+    restingHr: integer("resting_hr"),
+    /** Overnight HRV as rMSSD in ms (Garmin, Oura, Whoop, intervals.icu). */
+    hrv: real("hrv"),
+    /** HRV as SDNN in ms (Apple Watch); not comparable with rMSSD, kept apart. */
+    hrvSdnn: real("hrv_sdnn"),
+    sleepSec: integer("sleep_sec"),
+    weightKg: real("weight_kg"),
+    /** Morning check-in, 1 (bad) to 5 (very good). */
+    legs: integer("legs"),
+    sleepFeel: integer("sleep_feel"),
+    motivation: integer("motivation"),
+    /** Last writer: apple, garmin, intervals, manual or demo (sample data, removed with the demo connection). */
+    source: text("source").notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.date] })],
 );
 
 export const coachMessages = sqliteTable(
@@ -286,3 +327,4 @@ export type ScheduledWorkout = typeof scheduledWorkouts.$inferSelect;
 export type TrainingPlan = typeof trainingPlans.$inferSelect;
 export type Delivery = typeof deliveries.$inferSelect;
 export type CoachMessage = typeof coachMessages.$inferSelect;
+export type Wellness = typeof wellness.$inferSelect;

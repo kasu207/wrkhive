@@ -2,7 +2,7 @@ import "server-only";
 import { and, count, eq, gte, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { activities, deliveries, scheduledWorkouts, users, workouts, type User } from "@/db/schema";
-import { readinessFromPmc, type Readiness } from "@/lib/analytics/readiness";
+import { readinessFromPmc, withRecovery, type Readiness } from "@/lib/analytics/readiness";
 import { addDays, type ISODate } from "@/lib/dates";
 import { newId } from "@/lib/id";
 import { adaptWorkout } from "@/lib/workout/adapt";
@@ -10,10 +10,12 @@ import { summarize } from "@/lib/workout/metrics";
 import { thresholdsOf } from "./auth";
 import { PROVIDERS, todayFor } from "./sync";
 import { formCalibration, pmcFor } from "./training";
+import { recoveryFor } from "./wellness";
 
 /**
  * Readiness for today, or null without enough recent data to judge (a
- * missing sync must not look like three weeks of rest).
+ * missing sync must not look like three weeks of rest). Impaired recovery
+ * (HRV, resting heart rate, sleep, check-in) tightens it.
  */
 export function readinessFor(user: User): Readiness | null {
   const today = todayFor(user);
@@ -26,7 +28,7 @@ export function readinessFor(user: User): Readiness | null {
   if (recent < 3) return null;
   // Without enough history the model reads every session as overload; never adapt on that basis.
   if (!formCalibration(user).reliable) return null;
-  return readinessFromPmc(pmcFor(user, 14));
+  return withRecovery(readinessFromPmc(pmcFor(user, 14)), recoveryFor(user));
 }
 
 /** Providers the workout was already sent to for that day (a changed version must be re-sent there). */

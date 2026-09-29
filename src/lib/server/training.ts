@@ -6,6 +6,7 @@ import { baselineDailyLoad, performanceChart, predictRaceTime, type PmcPoint } f
 import { readinessFromPmc } from "@/lib/analytics/readiness";
 import { addDays, diffDays, startOfWeek, type ISODate } from "@/lib/dates";
 import { todayFor } from "./sync";
+import { recoveryFor, wellnessBetween } from "./wellness";
 
 export function dailyLoad(userId: string, from: ISODate, to: ISODate): Map<ISODate, number> {
   const rows = getDb()
@@ -163,6 +164,13 @@ export function trainingContext(user: User): string {
   const readiness = recent.length >= 3 && calibration.reliable ? readinessFromPmc(pmc) : null;
   if (readiness) lines.push(`Bereitschaft: ${readiness.label} (Form ${readiness.formPct} % der Fitness, Rampe ${readiness.ramp} CTL/Woche). ${readiness.advice}`);
   if (fitness) lines.push(`Lauf-VO2max (effektiv) ${fitness.vo2max}`);
+  const recovery = recoveryFor(user);
+  if (recovery) lines.push(`Erholung: ${recovery.label} (${recovery.signals.map((s) => `${s.label} ${s.text}`).join(", ")})`);
+  const days = wellnessBetween(user.id, addDays(today, -6), today).filter((d) => d.restingHr || d.hrv || d.hrvSdnn || d.sleepSec);
+  if (days.length) {
+    lines.push("Tageswerte der letzten 7 Tage (Ruhepuls bpm / HRV ms / Schlaf h):");
+    for (const d of days) lines.push(`- ${d.date}: ${d.restingHr ?? "–"} / ${d.hrv ?? (d.hrvSdnn ? `${d.hrvSdnn} (SDNN)` : "–")} / ${d.sleepSec ? (d.sleepSec / 3600).toFixed(1) : "–"}`);
+  }
   lines.push(
     `Wochenumfang der letzten 6 Wochen (h Rad/Lauf/Kraft/Sonstiges, TSS): ${weeks
       .map((w) => `${w.week}: ${w.ride.toFixed(1)}/${w.run.toFixed(1)}/${w.strength.toFixed(1)}/${w.other.toFixed(1)}, ${Math.round(w.tss)}`)

@@ -22,6 +22,7 @@ export interface AppleHealthCardProps {
 }
 
 const BATCH = 500;
+const DAY_BATCH = 1000;
 
 type ImportState = { phase: "idle" } | { phase: "reading"; fraction: number } | { phase: "sending"; done: number; total: number };
 
@@ -38,7 +39,7 @@ const strong = "font-medium text-ink";
 
 /**
  * Apple Health has no web API. Workouts arrive from the Health app's export
- * (read in the browser, only workouts are uploaded) and continuously from the
+ * (read in the browser, only workouts and daily health values are uploaded) and continuously from the
  * iOS app Health Auto Export via a per-user webhook key.
  */
 export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhookUrl, demo }: AppleHealthCardProps) {
@@ -61,8 +62,8 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
         toast({ tone: "error", title: "Keine Health-Daten gefunden", description: "Wähle die ZIP-Datei aus „Alle Gesundheitsdaten exportieren“ oder die darin enthaltene export.xml." });
         return;
       }
-      if (!r.workouts.length) {
-        toast({ tone: "error", title: "Keine Workouts im Export", description: "Der Export enthält keine aufgezeichneten Trainings." });
+      if (!r.workouts.length && !r.daily.length) {
+        toast({ tone: "error", title: "Keine Workouts im Export", description: "Der Export enthält keine aufgezeichneten Trainings und keine Gesundheitswerte." });
         return;
       }
       const totals = { inserted: 0, updated: 0, merged: 0, skipped: r.skipped };
@@ -77,10 +78,19 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
         totals.merged += data.merged;
         totals.skipped += data.skipped;
       }
+      // Daily health values (resting heart rate, HRV, sleep, weight), sent separately in batches.
+      let days = 0;
+      for (let i = 0; i < r.daily.length; i += DAY_BATCH) {
+        const res = await fetch("/api/activities/import/apple-health", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ daily: r.daily.slice(i, i + DAY_BATCH) }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? `Fehler ${res.status}`);
+        days += data.days ?? 0;
+      }
       const parts = [`${formatNumber(totals.inserted)} neu`];
       if (totals.updated) parts.push(`${formatNumber(totals.updated)} aktualisiert`);
       if (totals.merged) parts.push(`${formatNumber(totals.merged)} mit vorhandenen zusammengeführt`);
       if (totals.skipped) parts.push(`${formatNumber(totals.skipped)} übersprungen`);
+      if (days) parts.push(`Gesundheitswerte für ${formatNumber(days)} Tage`);
       toast({ tone: "success", title: `${formatNumber(r.workouts.length)} Workouts gelesen`, description: parts.join(", ") });
       setImportOpen(false);
       router.refresh();
@@ -142,7 +152,7 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
         Apple bietet keine Web-Schnittstelle zu Health. Bisherige Workouts holst du einmalig über den Export der Health-App, neue kommen laufend über die iPhone-App Health Auto Export.
       </p>
       <ul className="space-y-1.5 px-5 pb-4 text-[14px] text-ink-2">
-        {["Dauer, Distanz, Puls, Höhenmeter und Kalorien jedes Workouts", "Auch Einheiten anderer Apps, die in Health schreiben, z. B. Freeletics", "Doppelte Einheiten mit Garmin, Wahoo oder intervals.icu werden zusammengeführt"].map((f) => (
+        {["Dauer, Distanz, Puls, Höhenmeter und Kalorien jedes Workouts", "Ruhepuls, HRV, Schlafdauer und Gewicht für die Erholungswerte", "Auch Einheiten anderer Apps, die in Health schreiben, z. B. Freeletics", "Doppelte Einheiten mit Garmin, Wahoo oder intervals.icu werden zusammengeführt"].map((f) => (
           <li key={f} className="flex gap-2">
             <span className="mt-2 size-1.5 shrink-0 rounded-full bg-ink-3" />
             {f}
@@ -185,7 +195,7 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
         open={importOpen}
         onClose={() => setImportOpen(false)}
         title="Apple-Health-Export importieren"
-        description="Holt alle bisherigen Workouts. Die Datei wird in deinem Browser gelesen; übertragen werden nur die Workouts, keine anderen Gesundheitsdaten."
+        description="Holt alle bisherigen Workouts. Die Datei wird in deinem Browser gelesen; übertragen werden nur die Workouts und Tageswerte für Ruhepuls, HRV, Schlafdauer und Gewicht, keine anderen Gesundheitsdaten."
         footer={
           <>
             <Button variant="ghost" onClick={() => setImportOpen(false)}>
@@ -224,7 +234,7 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
           setKey(null);
         }}
         title="Apple Health automatisch synchronisieren"
-        description="Die iPhone-App Health Auto Export schickt neue Workouts im Hintergrund an Wrkhive."
+        description="Die iPhone-App Health Auto Export schickt neue Workouts und Tageswerte im Hintergrund an Wrkhive."
         footer={
           <Button
             variant="primary"
@@ -239,7 +249,7 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
       >
         <ol className="space-y-4 text-[14px] leading-relaxed text-ink-2">
           <Step n={1}>
-            Im App Store <strong className={strong}>Health Auto Export – JSON+CSV</strong> installieren und den Zugriff auf Workouts, Herzfrequenz, Distanzen und Aktivitätsenergie erlauben. Automationen sind in der App kostenpflichtig (Premium); den aktuellen Preis zeigt der App Store.
+            Im App Store <strong className={strong}>Health Auto Export – JSON+CSV</strong> installieren und den Zugriff auf Workouts, Herzfrequenz, Distanzen und Aktivitätsenergie erlauben, für die Erholungswerte zusätzlich Ruhepuls, Herzfrequenzvariabilität, Schlaf und Gewicht. Automationen sind in der App kostenpflichtig (Premium); den aktuellen Preis zeigt der App Store.
           </Step>
           <Step n={2}>
             <div className="space-y-2.5">
@@ -273,7 +283,7 @@ export function AppleHealthCard({ hasKey, lastDeliveryAt, activityCount, webhook
             In Health Auto Export unter <strong className={strong}>Automations</strong> eine neue Automation anlegen: Typ <strong className={strong}>REST API</strong>, die URL eintragen und unter Headers den Key <code className="rounded bg-surface-2 px-1 py-0.5 text-[13px]">api-key</code> mit deinem Schlüssel als Wert.
           </Step>
           <Step n={4}>
-            Data Type <strong className={strong}>Workouts</strong>, Export Format <strong className={strong}>JSON</strong>, Export Version <strong className={strong}>2</strong>. Routen-Daten weglassen und <strong className={strong}>Batch Requests</strong> einschalten, dann bleiben die Lieferungen klein.
+            Data Type <strong className={strong}>Workouts</strong>, Export Format <strong className={strong}>JSON</strong>, Export Version <strong className={strong}>2</strong>. Routen-Daten weglassen und <strong className={strong}>Batch Requests</strong> einschalten, dann bleiben die Lieferungen klein. Für die Erholungswerte eine zweite Automation mit Data Type <strong className={strong}>Health Metrics</strong> anlegen und nur Resting Heart Rate, Heart Rate Variability, Sleep Analysis und Weight wählen, Aggregation täglich. Was du nicht erfasst, lässt du einfach weg.
           </Step>
           <Step n={5}>Automation aktivieren und mit „Manual Export“ testen. Die Karte zeigt danach die letzte Lieferung.</Step>
         </ol>

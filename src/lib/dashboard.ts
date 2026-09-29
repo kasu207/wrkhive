@@ -37,7 +37,7 @@ export const WIDGETS = {
   thresholds: { title: "Schwellen-Check", description: "Prüft FTP, Maximal-, Schwellen- und Ruhepuls gegen deine Aufzeichnungen.", group: "performance", sizes: ["m", "l"] },
   efficiency: { title: "Aerobe Effizienz", description: "Leistung pro Herzschlag in lockeren Einheiten und aerobe Entkopplung.", group: "performance", sizes: ["m", "l"] },
   bests: { title: "Bestwerte", description: "Beste Leistung über 5 s bis 60 min und schnellste Laufzeiten, mit FTP-Schätzung.", group: "performance", sizes: ["m", "l"] },
-  vo2max: { title: "VO2max (Lauf)", description: "Effektive VO2max aus Pace und Puls deiner Läufe.", group: "performance", sizes: ["s"] },
+  vo2max: { title: "VO2max", description: "Lauf aus Pace und Puls, Rad aus 5-min-Leistung pro kg, im Vergleich mit dem Wert deiner Uhr.", group: "performance", sizes: ["s", "m"] },
   predictions: { title: "Laufprognosen", description: "Zielzeiten für 5 km bis Marathon aus deiner VO2max.", group: "performance", sizes: ["m"] },
   recent: { title: "Letzte Aktivitäten", description: "Die sechs neuesten Einheiten.", group: "activities", sizes: ["m", "l"] },
   planned: { title: "Diese Woche geplant", description: "Geplante Workouts der nächsten sieben Tage.", group: "activities", sizes: ["m"] },

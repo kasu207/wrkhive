@@ -57,6 +57,13 @@
       "when": 1790711805763,
       "tag": "0007_health_dashboard",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790714860725,
+      "tag": "0008_device_vo2max",
+      "breakpoints": true
     }
   ]
 }

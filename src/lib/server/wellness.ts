@@ -16,6 +16,8 @@ const RANGE = {
   hrvSdnn: [3, 300],
   sleepSec: [30 * 60, 16 * 3600],
   weightKg: [25, 300],
+  vo2max: [15, 95],
+  vo2maxRide: [15, 95],
 } as const;
 
 type Field = keyof typeof RANGE;

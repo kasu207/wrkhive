@@ -125,10 +125,8 @@ function renderContent(item: LayoutItem, d: DashboardData, sampleLoad: number): 
       return <StatTile label="Aktivitäten" value={`${d.count28()}`} sub="letzte 28 Tage" />;
     case "consistency":
       return <ConsistencyWidget d={d} item={item} />;
-    case "vo2max": {
-      const f = d.fitness();
-      return f ? <StatTile label="VO2max (Lauf)" value={formatNumber(f.vo2max, 0)} sub={`Schätzung aus ${f.samples} Läufen`} /> : null;
-    }
+    case "vo2max":
+      return <Vo2maxWidget d={d} size={item.size} />;
     case "pmc":
       return (
         <Card className="h-full pb-3">
@@ -806,6 +804,44 @@ function MiniStat({ label, value, delta, deltaLabel, upIsGood }: { label: string
         ) : null}
       </div>
     </div>
+  );
+}
+
+function Vo2maxWidget({ d, size }: { d: DashboardData; size: LayoutItem["size"] }) {
+  const run = d.fitness();
+  const ride = d.cycling();
+  const device = d.deviceVo2max();
+  const rows: { label: string; value: number; note: string }[] = [];
+  if (run) rows.push({ label: "Lauf", value: run.vo2max, note: `aus ${run.samples} Läufen, alle Geräte` });
+  if (ride) rows.push({ label: "Rad", value: ride.vo2max, note: `${ride.basis === "power" ? "beste 5 min" : "aus FTP"} ${ride.power5min} W, ${formatNumber(ride.weightKg, 1)} kg` });
+  const deviceRows: { label: string; value: number; note: string }[] = [];
+  if (device?.run) deviceRows.push({ label: "Uhr", value: device.run.value, note: `Stand ${formatDateShort(displayDate(device.run.date))}` });
+  if (device?.ride) deviceRows.push({ label: "Uhr, Rad", value: device.ride.value, note: `Stand ${formatDateShort(displayDate(device.ride.date))}` });
+  const all = [...rows, ...deviceRows];
+  if (!all.length) return null;
+
+  if (size === "s") {
+    const [main, ...rest] = all;
+    return <StatTile label={`VO2max ${main.label}`} value={formatNumber(main.value, 0)} sub={rest.length ? rest.map((r) => `${r.label} ${formatNumber(r.value, 0)}`).join(" · ") : main.note} />;
+  }
+  return (
+    <Card className="h-full">
+      <CardHeader title="VO2max" description="Aus allen deinen Aufzeichnungen, im Vergleich mit dem Wert deiner Uhr." />
+      <div className="mt-3 divide-y divide-border pb-2">
+        {all.map((r) => (
+          <div key={r.label} className="flex items-center justify-between gap-3 px-5 py-3 text-[14px]">
+            <div className="min-w-0">
+              <div className="text-ink">{r.label}</div>
+              <div className="truncate text-[12px] text-ink-3">{r.note}</div>
+            </div>
+            <span className="text-[19px] font-semibold tabular">{formatNumber(r.value, 1)}</span>
+          </div>
+        ))}
+      </div>
+      {deviceRows.length && rows.length ? (
+        <p className="px-5 pb-5 text-[12px] leading-relaxed text-ink-3">Die Uhr rechnet nur mit Einheiten, die sie selbst aufgezeichnet hat. Trainierst du mit mehreren Geräten, sind die Wrkhive-Werte meist näher dran.</p>
+      ) : null}
+    </Card>
   );
 }
 

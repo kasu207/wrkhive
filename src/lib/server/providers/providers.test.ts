@@ -101,11 +101,15 @@ describe("daily health values from providers", () => {
     expect(normalizeGarminHealth("hrv", { calendarDate: "2026-03-06", lastNightAvg: 64, lastNight5MinHigh: 90 })).toEqual({ date: "2026-03-06", hrv: 64 });
     // Weighed at 23:30 local time the day before in UTC terms.
     expect(normalizeGarminHealth("bodyComps", { measurementTimeInSeconds: Date.parse("2026-03-06T22:30:00Z") / 1000, measurementTimeOffsetInSeconds: 3600, weightInGrams: 71850 })).toEqual({ date: "2026-03-06", weightKg: 71.85 });
+    expect(normalizeGarminHealth("userMetrics", { calendarDate: "2026-03-06", vo2Max: 52, vo2MaxCycling: 55, fitnessAge: 30 })).toEqual({ date: "2026-03-06", vo2max: 52, vo2maxRide: 55 });
+    expect(normalizeGarminHealth("userMetrics", { calendarDate: "2026-03-06", vo2Max: 52 })).toEqual({ date: "2026-03-06", vo2max: 52, vo2maxRide: null });
+    expect(normalizeGarminHealth("userMetrics", { calendarDate: "2026-03-06", fitnessAge: 30 })).toBeNull();
     expect(normalizeGarminHealth("dailies", { calendarDate: "2026-03-06" })).toBeNull();
   });
 
   it("reads intervals.icu wellness", () => {
-    expect(normalizeIntervalsWellness({ id: "2026-03-06", restingHR: 47, hrv: 71, hrvSDNN: null, sleepSecs: 27000, weight: 70.2 })).toEqual({ date: "2026-03-06", restingHr: 47, hrv: 71, hrvSdnn: null, sleepSec: 27000, weightKg: 70.2 });
+    expect(normalizeIntervalsWellness({ id: "2026-03-06", restingHR: 47, hrv: 71, hrvSDNN: null, sleepSecs: 27000, weight: 70.2 })).toEqual({ date: "2026-03-06", restingHr: 47, hrv: 71, hrvSdnn: null, sleepSec: 27000, weightKg: 70.2, vo2max: null });
+    expect(normalizeIntervalsWellness({ id: "2026-03-06", vo2max: 51.5 })).toMatchObject({ date: "2026-03-06", vo2max: 51.5 });
     expect(normalizeIntervalsWellness({ id: "2026-03-06" })).toBeNull();
     expect(normalizeIntervalsWellness({ id: "gestern", restingHR: 47 })).toBeNull();
   });

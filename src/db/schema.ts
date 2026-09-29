@@ -259,6 +259,10 @@ export const wellness = sqliteTable(
     hrvSdnn: real("hrv_sdnn"),
     sleepSec: integer("sleep_sec"),
     weightKg: real("weight_kg"),
+    /** VO2max as the device reports it (Garmin: running, intervals.icu), ml/kg/min. */
+    vo2max: real("vo2max"),
+    /** Cycling VO2max as the device reports it (Garmin), ml/kg/min. */
+    vo2maxRide: real("vo2max_ride"),
     /** Morning check-in, 1 (bad) to 5 (very good). */
     legs: integer("legs"),
     sleepFeel: integer("sleep_feel"),

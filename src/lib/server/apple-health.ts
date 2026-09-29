@@ -41,6 +41,7 @@ export const appleDailySchema = z.object({
   hrvSdnn: optionalNumber(1000),
   sleepSec: optionalNumber(86_400),
   weightKg: optionalNumber(500),
+  vo2max: optionalNumber(100),
 });
 
 export function importAppleDaily(user: Pick<User, "id">, list: AppleDaily[]): number {

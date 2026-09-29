@@ -9,7 +9,7 @@ import { hrvTrend, metricTrend, recoveryFrom } from "@/lib/analytics/wellness";
 import { DEFAULT_GOAL, type WidgetId } from "@/lib/dashboard";
 import { addDays } from "@/lib/dates";
 import { readinessFor } from "./adapt";
-import { activitiesBetween, formCalibration, pmcFor, recentActivities, runningFitness, scheduledBetween, weeklyVolume } from "./training";
+import { activitiesBetween, cyclingFitness, deviceVo2max, formCalibration, pmcFor, recentActivities, runningFitness, scheduledBetween, weeklyVolume } from "./training";
 import { todayFor } from "./sync";
 import { wellnessBetween } from "./wellness";
 
@@ -58,6 +58,8 @@ export function dashboardData(user: User) {
     weeks: lazy(() => weeklyVolume(user, 12)),
     recent: lazy(() => recentActivities(user.id, 6)),
     fitness: lazy(() => runningFitness(user)),
+    cycling: lazy(() => cyclingFitness(user)),
+    deviceVo2max: lazy(() => deviceVo2max(user)),
     upcoming: lazy(() => scheduledBetween(user.id, today, addDays(today, 6))),
     activityCount: lazy(() => getDb().select({ n: count() }).from(activities).where(eq(activities.userId, user.id)).get()?.n ?? 0),
     count28: lazy(() => getDb().select({ n: count() }).from(activities).where(and(eq(activities.userId, user.id), gte(activities.date, addDays(today, -27)))).get()?.n ?? 0),
@@ -119,6 +121,9 @@ export function emptyHint(id: WidgetId, d: DashboardData): string | null {
         ? null
         : "Bestwerte entstehen aus Sekundendaten. Importiere FIT-Dateien (einzeln oder als Garmin-Connect-Export).";
     case "vo2max":
+      return d.fitness() || d.cycling() || d.deviceVo2max()
+        ? null
+        : "Braucht zwei Läufe mit Puls in den letzten sechs Wochen, Radfahrten mit Leistungsdaten (FIT) und dein Gewicht, oder die VO2max deiner Uhr über Garmin, Apple Health oder intervals.icu.";
     case "predictions":
       return d.fitness() ? null : "Braucht mindestens zwei Läufe mit Puls in den letzten sechs Wochen.";
     case "thresholds":

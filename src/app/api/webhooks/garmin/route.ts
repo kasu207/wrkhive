@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       console.error("[garmin] webhook processing failed", e);
     }
   }
-  // Health summaries (resting heart rate, sleep, HRV, weight).
+  // Health summaries (resting heart rate, sleep, HRV, weight, VO2max).
   const health = new Map<string, WellnessInput[]>();
   for (const type of GARMIN_HEALTH_TYPES) {
     for (const item of (body[type] as Record<string, unknown>[] | undefined) ?? []) {

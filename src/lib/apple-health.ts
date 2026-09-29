@@ -45,14 +45,16 @@ export interface AppleDaily {
   hrvSdnn?: number | null;
   sleepSec?: number | null;
   weightKg?: number | null;
+  /** VO2max as Apple Watch estimates it (outdoor walks and runs), ml/kg/min. */
+  vo2max?: number | null;
 }
 
 /** One reading before it is reduced to a day. */
 export interface AppleSample {
-  kind: "restingHr" | "hrvSdnn" | "weightKg" | "sleep";
+  kind: "restingHr" | "hrvSdnn" | "weightKg" | "vo2max" | "sleep";
   /** Local calendar day; sleep counts for the day it ends. */
   date: string;
-  /** bpm, ms, kg or seconds asleep. */
+  /** bpm, ms, kg, ml/kg/min or seconds asleep. */
   value: number;
   source?: string | null;
 }
@@ -252,7 +254,7 @@ function tagEnd(s: string, from: number): number {
   return -1;
 }
 
-const WORKOUT_START = /<Workout[\s>/]|<Record type="HK(?:QuantityTypeIdentifier(?:RestingHeartRate|HeartRateVariabilitySDNN|BodyMass)|CategoryTypeIdentifierSleepAnalysis)"/g;
+const WORKOUT_START = /<Workout[\s>/]|<Record type="HK(?:QuantityTypeIdentifier(?:RestingHeartRate|HeartRateVariabilitySDNN|BodyMass|VO2Max)|CategoryTypeIdentifierSleepAnalysis)"/g;
 /** Characters kept between chunks so a start tag split across chunks is still found. */
 const TAIL = 128;
 
@@ -276,6 +278,7 @@ export function parseExportRecord(head: string): AppleSample | null {
   const date = a.startDate.slice(0, 10);
   if (type === "RestingHeartRate") return { kind: "restingHr", date, value, source };
   if (type === "HeartRateVariabilitySDNN") return { kind: "hrvSdnn", date, value, source };
+  if (type === "VO2Max") return { kind: "vo2max", date, value, source };
   if (type === "BodyMass") {
     const unit = (a.unit ?? "kg").toLowerCase();
     const kg = unit === "lb" ? value * 0.45359237 : unit === "g" ? value / 1000 : unit === "kg" ? value : null;
@@ -286,18 +289,19 @@ export function parseExportRecord(head: string): AppleSample | null {
 
 /**
  * Reduces readings to one value per day: the mean for resting heart rate and
- * HRV, the last reading for weight, and for sleep the longest total of any
+ * HRV, the last reading for weight and VO2max, and for sleep the longest total of any
  * single source (iPhone and Watch both record the same night).
  */
 export function dailyFromSamples(samples: AppleSample[]): AppleDaily[] {
-  const days = new Map<string, { rhr: number[]; hrv: number[]; weight: number | null; sleep: Map<string, number> }>();
+  const days = new Map<string, { rhr: number[]; hrv: number[]; weight: number | null; vo2max: number | null; sleep: Map<string, number> }>();
   for (const s of samples) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s.date)) continue;
     let d = days.get(s.date);
-    if (!d) days.set(s.date, (d = { rhr: [], hrv: [], weight: null, sleep: new Map() }));
+    if (!d) days.set(s.date, (d = { rhr: [], hrv: [], weight: null, vo2max: null, sleep: new Map() }));
     if (s.kind === "restingHr") d.rhr.push(s.value);
     else if (s.kind === "hrvSdnn") d.hrv.push(s.value);
     else if (s.kind === "weightKg") d.weight = s.value;
+    else if (s.kind === "vo2max") d.vo2max = s.value;
     else d.sleep.set(s.source ?? "", (d.sleep.get(s.source ?? "") ?? 0) + s.value);
   }
   const avg = (v: number[]) => (v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null);
@@ -311,6 +315,7 @@ export function dailyFromSamples(samples: AppleSample[]): AppleDaily[] {
         hrvSdnn: avg(d.hrv),
         sleepSec: sleep ? Math.round(Math.min(sleep, 16 * 3600)) : null,
         weightKg: d.weight === null ? null : Math.round(d.weight * 10) / 10,
+        ...(d.vo2max === null ? {} : { vo2max: Math.round(d.vo2max * 10) / 10 }),
       };
     });
 }
@@ -538,7 +543,7 @@ function toSeconds(value: number, unit: string | null): number {
 
 /**
  * Health metrics of a Health Auto Export payload: resting_heart_rate,
- * heart_rate_variability (SDNN), weight_body_mass and sleep_analysis, both
+ * heart_rate_variability (SDNN), weight_body_mass, vo2_max and sleep_analysis, both
  * aggregated per day (totalSleep / asleep / stages) and as raw stage entries.
  */
 export function parseAutoExportMetrics(metrics: unknown): AppleSample[] {
@@ -558,6 +563,9 @@ export function parseAutoExportMetrics(metrics: unknown): AppleSample[] {
       if (name === "resting_heart_rate" || name === "heart_rate_variability") {
         const date = day(e.date);
         if (date && value && value > 0) out.push({ kind: name === "resting_heart_rate" ? "restingHr" : "hrvSdnn", date, value, source });
+      } else if (name === "vo2_max") {
+        const date = day(e.date);
+        if (date && value && value > 0) out.push({ kind: "vo2max", date, value, source });
       } else if (name === "weight_body_mass") {
         const date = day(e.date);
         const u = (metricUnit ?? "kg").toLowerCase();

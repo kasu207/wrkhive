@@ -6,6 +6,7 @@
  *   device, or a duration estimate as last resort.
  * - Performance Management Chart: CTL (42 d), ATL (7 d) exponentially weighted
  *   daily load, TSB = CTL - ATL of the previous day (form going into today).
+ * - Cycling VO2max from the best 5-minute power per kilogram (Sitko).
  * - Effective VO2max from runs (Daniels/Gilbert oxygen cost, corrected for the
  *   heart-rate fraction after Swain), race predictions from VO2max.
  */
@@ -139,6 +140,21 @@ export function effectiveVo2max(run: { distanceM: number; durationSec: number; a
   const vo2Fraction = Math.min(1, Math.max(0.45, (hrFraction - 0.37) / 0.64));
   const est = vo2 / vo2Fraction;
   return est > 20 && est < 90 ? round1(est) : null;
+}
+
+/** Share of the 5-minute power a typical FTP corresponds to (FTP ≈ 83 % of the best 5 minutes). */
+export const FTP_OF_5MIN = 0.83;
+
+/**
+ * Cycling VO2max from the best 5-minute power per kilogram (Sitko et al.
+ * 2021: VO2max = 16.61 + 8.87 · W/kg, trained cyclists). Five minutes all-out
+ * is close to maximal aerobic power, so the estimate is only as good as the
+ * athlete's hardest recent effort.
+ */
+export function cyclingVo2max(power5min: number, weightKg: number): number | null {
+  if (!(power5min > 0) || !(weightKg >= 30 && weightKg <= 250)) return null;
+  const est = 16.61 + 8.87 * (power5min / weightKg);
+  return est > 20 && est < 95 ? round1(est) : null;
 }
 
 /** Predicted race time in seconds for a distance at a given VO2max (bisection). */

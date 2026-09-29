@@ -94,6 +94,8 @@ export interface WellnessInput {
   hrvSdnn?: number | null;
   sleepSec?: number | null;
   weightKg?: number | null;
+  vo2max?: number | null;
+  vo2maxRide?: number | null;
 }
 
 export interface SyncResult {

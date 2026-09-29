@@ -225,6 +225,7 @@ const RECORDS_XML = `<HealthData locale="de_DE">
   </HeartRateVariabilityMetadataList>
  </Record>
  <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Apple Watch" unit="ms" startDate="2024-05-04 05:10:00 +0200" endDate="2024-05-04 05:11:00 +0200" value="55.5"/>
+ <Record type="HKQuantityTypeIdentifierVO2Max" sourceName="Apple Watch" unit="mL/min·kg" startDate="2024-05-04 08:46:00 +0200" endDate="2024-05-04 08:46:00 +0200" value="47.3"/>
  <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Waage" unit="lb" startDate="2024-05-04 07:30:00 +0200" endDate="2024-05-04 07:30:00 +0200" value="165"/>
  <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" startDate="2024-05-03 23:00:00 +0200" endDate="2024-05-04 02:00:00 +0200" value="HKCategoryValueSleepAnalysisAsleepCore"/>
  <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Apple Watch" startDate="2024-05-04 02:00:00 +0200" endDate="2024-05-04 02:20:00 +0200" value="HKCategoryValueSleepAnalysisAwake"/>
@@ -234,7 +235,7 @@ const RECORDS_XML = `<HealthData locale="de_DE">
 </HealthData>`;
 
 describe("Apple Health daily values", () => {
-  it("reads resting heart rate, HRV, weight and sleep records in any chunking", () => {
+  it("reads resting heart rate, HRV, weight, VO2max and sleep records in any chunking", () => {
     for (const size of [7, 64, 1000, RECORDS_XML.length]) {
       const samples: AppleSample[] = [];
       const scanner = createExportScanner(
@@ -245,7 +246,7 @@ describe("Apple Health daily values", () => {
       scanner.end();
       const [day] = dailyFromSamples(samples);
       // Heart rate samples are ignored; SDNN is averaged; sleep takes the longest source (Watch: 3 h + 4 h).
-      expect(day).toEqual({ date: "2024-05-04", restingHr: 51, hrvSdnn: 52, sleepSec: 7 * 3600, weightKg: 74.8 });
+      expect(day).toEqual({ date: "2024-05-04", restingHr: 51, hrvSdnn: 52, sleepSec: 7 * 3600, weightKg: 74.8, vo2max: 47.3 });
     }
   });
 
@@ -256,10 +257,11 @@ describe("Apple Health daily values", () => {
       { name: "weight_body_mass", units: "kg", data: [{ date: "2026-03-06 07:00:00 +0100", qty: 71.4 }] },
       { name: "sleep_analysis", units: "hr", data: [{ date: "2026-03-06 00:00:00 +0100", totalSleep: 7.25, inBed: 8, core: 4, deep: 1.25, rem: 2 }] },
       { name: "sleep_analysis", units: "hr", data: [{ startDate: "2026-03-06 23:00:00 +0100", endDate: "2026-03-07 03:00:00 +0100", value: "Core", qty: 4 }, { startDate: "2026-03-07 03:00:00 +0100", endDate: "2026-03-07 04:00:00 +0100", value: "Awake", qty: 1 }, { startDate: "2026-03-07 04:00:00 +0100", endDate: "2026-03-07 06:30:00 +0100", value: "REM", qty: 2.5 }] },
+      { name: "vo2_max", units: "ml/(kg·min)", data: [{ date: "2026-03-06 18:00:00 +0100", qty: 46.8 }] },
       { name: "step_count", units: "count", data: [{ date: "2026-03-06 00:00:00 +0100", qty: 9000 }] },
     ]);
     expect(dailyFromSamples(samples)).toEqual([
-      { date: "2026-03-06", restingHr: 49, hrvSdnn: 61.2, sleepSec: 7.25 * 3600, weightKg: 71.4 },
+      { date: "2026-03-06", restingHr: 49, hrvSdnn: 61.2, sleepSec: 7.25 * 3600, weightKg: 71.4, vo2max: 46.8 },
       { date: "2026-03-07", restingHr: null, hrvSdnn: null, sleepSec: 6.5 * 3600, weightKg: null },
     ]);
     const payload = parseAutoExportPayload({ data: { metrics: [{ name: "resting_heart_rate", units: "count/min", data: [{ date: "2026-03-06 00:00:00 +0100", qty: 49 }] }] } });

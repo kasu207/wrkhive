@@ -12,7 +12,7 @@ import { ProviderError, type NormalizedActivity, type ProviderAdapter, type Toke
  * - Activity API: activity summaries arrive via push (or ping) webhooks;
  *   history is requested via backfill and also delivered to the webhook.
  * - Health API (permission HEALTH_EXPORT): dailies (resting heart rate),
- *   sleeps, HRV and body composition arrive the same way.
+ *   sleeps, HRV, body composition and user metrics (VO2max) arrive the same way.
  */
 // Overridable for integration tests against a mock server.
 const AUTHORIZE_URL = process.env.GARMIN_AUTHORIZE_URL ?? "https://connect.garmin.com/oauth2Confirm";
@@ -87,7 +87,7 @@ export function normalizeGarminActivity(a: GarminActivitySummary): NormalizedAct
 }
 
 /** Health API summary types Wrkhive reads, as named in webhook bodies and backfill paths. */
-export const GARMIN_HEALTH_TYPES = ["dailies", "sleeps", "hrv", "bodyComps"] as const;
+export const GARMIN_HEALTH_TYPES = ["dailies", "sleeps", "hrv", "bodyComps", "userMetrics"] as const;
 export type GarminHealthType = (typeof GARMIN_HEALTH_TYPES)[number];
 
 const gPos = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
@@ -106,6 +106,13 @@ export function normalizeGarminHealth(type: GarminHealthType, raw: Record<string
     const stages = [raw.deepSleepDurationInSeconds, raw.lightSleepDurationInSeconds, raw.remSleepInSeconds].map(gPos);
     const sleepSec = stages.some((v) => v !== null) ? stages.reduce<number>((a, b) => a + (b ?? 0), 0) : gPos(raw.durationInSeconds);
     return date && sleepSec ? { date, sleepSec } : null;
+  }
+  if (type === "userMetrics") {
+    // VO2max as Garmin computes it on the watch (running and, with a power meter, cycling).
+    const date = calendarDate(raw.calendarDate);
+    const vo2max = gPos(raw.vo2Max);
+    const vo2maxRide = gPos(raw.vo2MaxCycling);
+    return date && (vo2max || vo2maxRide) ? { date, vo2max, vo2maxRide } : null;
   }
   if (type === "hrv") {
     const date = calendarDate(raw.calendarDate);

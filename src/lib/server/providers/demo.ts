@@ -236,7 +236,9 @@ export function generateDemoActivities(seed: string, from: ISODate, to: ISODate,
 /**
  * Deterministic daily health values for the demo: resting heart rate, HRV
  * (rMSSD), sleep and weight around stable personal values, with an
- * occasional rough patch (bad sleep, a cold) every couple of weeks.
+ * occasional rough patch (bad sleep, a cold) every couple of weeks. The
+ * watch's VO2max sits a bit below the Wrkhive estimate, as it does for
+ * athletes who record part of their training with other devices.
  */
 export function generateDemoWellness(seed: string, from: ISODate, to: ISODate, athlete: Pick<Athlete, "restHr">): WellnessInput[] {
   const out: WellnessInput[] = [];
@@ -251,6 +253,7 @@ export function generateDemoWellness(seed: string, from: ISODate, to: ISODate, a
       hrv: Math.round(62 * Math.exp(noise() * 0.12 - (rough ? 0.22 : 0))),
       sleepSec: Math.round((7.3 + noise() * 0.7 - (rough ? 1.1 : 0)) * 3600),
       weightKg: Math.round((72.5 + Math.sin(day / 40) * 0.8 + noise() * 0.3) * 10) / 10,
+      vo2max: Math.round(47 + Math.sin(day / 90) * 1.5),
     });
   }
   return out;

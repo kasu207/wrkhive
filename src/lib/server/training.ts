@@ -1,10 +1,11 @@
 import "server-only";
 import { and, asc, desc, eq, gte, lte, min, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activities, scheduledWorkouts, workouts, type User } from "@/db/schema";
-import { baselineDailyLoad, performanceChart, predictRaceTime, type PmcPoint } from "@/lib/analytics/load";
+import { activities, scheduledWorkouts, wellness, workouts, type User } from "@/db/schema";
+import { baselineDailyLoad, cyclingVo2max, FTP_OF_5MIN, performanceChart, predictRaceTime, type PmcPoint } from "@/lib/analytics/load";
 import { readinessFromPmc } from "@/lib/analytics/readiness";
 import { addDays, diffDays, startOfWeek, type ISODate } from "@/lib/dates";
+import { DEFAULT_THRESHOLDS } from "@/lib/workout/types";
 import { todayFor } from "./sync";
 import { recoveryFor, wellnessBetween } from "./wellness";
 
@@ -141,6 +142,74 @@ export function runningFitness(user: User): RunningFitness | null {
   return { vo2max, samples: rows.length, predictions: distances.map((d) => ({ ...d, seconds: predictRaceTime(vo2max, d.distanceM) })) };
 }
 
+export interface CyclingFitness {
+  vo2max: number;
+  /** Power the estimate is based on: best 5 minutes of the window, or derived from the FTP setting. */
+  power5min: number;
+  weightKg: number;
+  basis: "power" | "ftp";
+  /** Day of the best 5-minute effort (basis "power"). */
+  date: ISODate | null;
+}
+
+/**
+ * Cycling VO2max from the best 5-minute power of the last 42 days and the
+ * current weight. Without a recorded power curve (bests come from FIT files)
+ * the FTP setting stands in, as long as it is not the default value.
+ */
+export function cyclingFitness(user: User): CyclingFitness | null {
+  const today = todayFor(user);
+  const weightKg = latestWellness(user.id, "weightKg", addDays(today, -89), today)?.value ?? user.weightKg;
+  if (!weightKg) return null;
+  const rides = getDb()
+    .select({ date: activities.date, bests: activities.bests })
+    .from(activities)
+    .where(and(eq(activities.userId, user.id), eq(activities.sport, "ride"), gte(activities.date, addDays(today, -41))))
+    .all();
+  let best: { watts: number; date: ISODate } | null = null;
+  for (const r of rides) {
+    const w = r.bests?.power?.["300"];
+    if (w && (!best || w > best.watts)) best = { watts: w, date: r.date };
+  }
+  if (best) {
+    const vo2max = cyclingVo2max(best.watts, weightKg);
+    if (vo2max) return { vo2max, power5min: best.watts, weightKg, basis: "power", date: best.date };
+  }
+  if (user.ftp && user.ftp !== DEFAULT_THRESHOLDS.ftp) {
+    const power5min = Math.round(user.ftp / FTP_OF_5MIN);
+    const vo2max = cyclingVo2max(power5min, weightKg);
+    if (vo2max) return { vo2max, power5min, weightKg, basis: "ftp", date: null };
+  }
+  return null;
+}
+
+export interface DeviceVo2max {
+  /** Running (Garmin, Apple Watch) or general (intervals.icu) VO2max. */
+  run: { value: number; date: ISODate } | null;
+  ride: { value: number; date: ISODate } | null;
+}
+
+/** Latest VO2max the athlete's devices reported in the last 90 days (Garmin, Apple Health, intervals.icu). */
+export function deviceVo2max(user: Pick<User, "id" | "timeZone">): DeviceVo2max | null {
+  const today = todayFor(user);
+  const from = addDays(today, -89);
+  const run = latestWellness(user.id, "vo2max", from, today);
+  const ride = latestWellness(user.id, "vo2maxRide", from, today);
+  return run || ride ? { run, ride } : null;
+}
+
+function latestWellness(userId: string, field: "weightKg" | "vo2max" | "vo2maxRide", from: ISODate, to: ISODate): { value: number; date: ISODate } | null {
+  const col = wellness[field];
+  const row = getDb()
+    .select({ date: wellness.date, value: col })
+    .from(wellness)
+    .where(and(eq(wellness.userId, userId), gte(wellness.date, from), lte(wellness.date, to), sql`${col} is not null`))
+    .orderBy(desc(wellness.date))
+    .limit(1)
+    .get();
+  return row?.value ? { value: row.value, date: row.date } : null;
+}
+
 /** Compact text summary of the athlete's situation for the coach. */
 export function trainingContext(user: User): string {
   const today = todayFor(user);
@@ -163,7 +232,14 @@ export function trainingContext(user: User): string {
   else if (user.baselineWeeklyHours) lines.push(`Trainingsumfang vor Wrkhive laut Athlet: ${user.baselineWeeklyHours} h/Woche (Startwert der Fitness).`);
   const readiness = recent.length >= 3 && calibration.reliable ? readinessFromPmc(pmc) : null;
   if (readiness) lines.push(`Bereitschaft: ${readiness.label} (Form ${readiness.formPct} % der Fitness, Rampe ${readiness.ramp} CTL/Woche). ${readiness.advice}`);
-  if (fitness) lines.push(`Lauf-VO2max (effektiv) ${fitness.vo2max}`);
+  if (fitness) lines.push(`Lauf-VO2max (effektiv, aus Pace und Puls aller Läufe) ${fitness.vo2max}`);
+  const cycling = cyclingFitness(user);
+  if (cycling) lines.push(`Rad-VO2max (geschätzt) ${cycling.vo2max} aus ${cycling.basis === "power" ? "bester 5-min-Leistung" : "FTP-Einstellung, ca."} ${cycling.power5min} W bei ${cycling.weightKg} kg`);
+  const device = deviceVo2max(user);
+  if (device) {
+    const parts = [device.run ? `${device.run.value} (Stand ${device.run.date})` : null, device.ride ? `Rad ${device.ride.value} (Stand ${device.ride.date})` : null].filter(Boolean);
+    lines.push(`VO2max laut Uhr: ${parts.join(", ")}. Die Uhr sieht nur selbst aufgezeichnete Einheiten; bei Abweichung gelten die Wrkhive-Werte.`);
+  }
   const recovery = recoveryFor(user);
   if (recovery) lines.push(`Erholung: ${recovery.label} (${recovery.signals.map((s) => `${s.label} ${s.text}`).join(", ")})`);
   const days = wellnessBetween(user.id, addDays(today, -6), today).filter((d) => d.restingHr || d.hrv || d.hrvSdnn || d.sleepSec);

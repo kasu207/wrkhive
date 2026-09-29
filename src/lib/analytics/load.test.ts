@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityLoad, baselineDailyLoad, effectiveVo2max, performanceChart, predictRaceTime } from "./load";
+import { activityLoad, baselineDailyLoad, cyclingVo2max, effectiveVo2max, performanceChart, predictRaceTime } from "./load";
 
 const M = { ftp: 250, lthr: 170, maxHr: 190, restHr: 50, thresholdPace: 300 };
 
@@ -85,5 +85,12 @@ describe("VO2max", () => {
     expect(v).not.toBeNull();
     expect(v!).toBeGreaterThan(40);
     expect(v!).toBeLessThan(60);
+  });
+  it("estimates cycling VO2max from 5-minute power per kilogram", () => {
+    // 4.5 W/kg over 5 minutes: 16.61 + 8.87 * 4.5 = 56.5
+    expect(cyclingVo2max(337.5, 75)).toBe(56.5);
+    expect(cyclingVo2max(0, 75)).toBeNull();
+    expect(cyclingVo2max(300, 0)).toBeNull();
+    expect(cyclingVo2max(2000, 40)).toBeNull();
   });
 });

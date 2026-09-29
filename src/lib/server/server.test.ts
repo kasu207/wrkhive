@@ -37,7 +37,7 @@ const schema = await import("@/db/schema");
 const { applyProviderMoves, ensureScheduled, isSameSession, upsertActivities, syncConnection, todayFor } = await import("./sync");
 const { createConnection } = await import("./connections");
 const { handleCoachMessage, handlePlanRequest } = await import("./coach");
-const { formCalibration, pmcFor } = await import("./training");
+const { cyclingFitness, deviceVo2max, formCalibration, pmcFor } = await import("./training");
 const { adaptScheduled, autoAdaptToday, readinessFor, restoreScheduled } = await import("./adapt");
 const { importAppleWorkouts, rotateAppleHealthKey, userByAppleHealthKey, revokeAppleHealthKey } = await import("./apple-health");
 const { POST: appleHealthWebhook } = await import("@/app/api/ingest/apple-health/route");
@@ -496,6 +496,32 @@ describe("form calibration", () => {
     expect(warm.ctl).toBeGreaterThan(cold.ctl + 40);
     expect(warm.tsb).toBeGreaterThan(cold.tsb);
     expect(readinessFor(seeded)).not.toBeNull();
+  });
+});
+
+describe("VO2max", () => {
+  it("estimates cycling VO2max from the best 5 minutes and compares with the watch", () => {
+    const user = makeUser("u-vo2");
+    const today = todayFor(user);
+    // Default FTP of the test user is not the app default, so without a power curve the FTP stands in.
+    expect(cyclingFitness(user)).toBeNull(); // no weight yet
+    upsertWellness(user.id, [{ date: addDaysIso(today, -3), weightKg: 75 }], "garmin");
+    expect(cyclingFitness(user)).toMatchObject({ basis: "ftp", power5min: Math.round(250 / 0.83) });
+
+    upsertActivities(user, { id: null, provider: "manual" }, [
+      { externalId: "vo2-a", sport: "ride", name: "Intervalle", startTime: new Date(`${addDaysIso(today, -5)}T16:00:00Z`), durationSec: 3600, normPower: 220, bests: { power: { "300": 337.5 } } },
+      { externalId: "vo2-b", sport: "ride", name: "Alt", startTime: new Date(`${addDaysIso(today, -60)}T16:00:00Z`), durationSec: 3600, normPower: 220, bests: { power: { "300": 400 } } },
+    ]);
+    expect(cyclingFitness(user)).toMatchObject({ basis: "power", power5min: 337.5, vo2max: 56.5, date: addDaysIso(today, -5) });
+
+    expect(deviceVo2max(user)).toBeNull();
+    upsertWellness(user.id, [{ date: addDaysIso(today, -10), vo2max: 49 }], "garmin");
+    upsertWellness(user.id, [{ date: addDaysIso(today, -2), vo2max: 48, vo2maxRide: 120 }], "garmin");
+    expect(deviceVo2max(user)).toEqual({ run: { value: 48, date: addDaysIso(today, -2) }, ride: null });
+
+    const d = dashboardData(user);
+    expect(emptyHint("vo2max", d)).toBeNull();
+    expect(emptyHint("predictions", d)).not.toBeNull();
   });
 });
 

@@ -149,12 +149,13 @@ export interface IntervalsWellness {
   hrvSDNN?: number | null;
   sleepSecs?: number | null;
   weight?: number | null;
+  vo2max?: number | null;
 }
 
 export function normalizeIntervalsWellness(w: IntervalsWellness): WellnessInput | null {
   if (typeof w.id !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(w.id)) return null;
-  const row = { date: w.id, restingHr: pos(w.restingHR), hrv: pos(w.hrv), hrvSdnn: pos(w.hrvSDNN), sleepSec: pos(w.sleepSecs), weightKg: pos(w.weight) };
-  return row.restingHr || row.hrv || row.hrvSdnn || row.sleepSec || row.weightKg ? row : null;
+  const row = { date: w.id, restingHr: pos(w.restingHR), hrv: pos(w.hrv), hrvSdnn: pos(w.hrvSDNN), sleepSec: pos(w.sleepSecs), weightKg: pos(w.weight), vo2max: pos(w.vo2max) };
+  return row.restingHr || row.hrv || row.hrvSdnn || row.sleepSec || row.weightKg || row.vo2max ? row : null;
 }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);

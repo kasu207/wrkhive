@@ -17,6 +17,9 @@ import { WorkoutChart } from "@/components/workout/workout-chart";
 import { cn } from "@/lib/cn";
 import { addDays, displayDate, isoWeekNumber } from "@/lib/dates";
 import { ManualActivityDialog } from "@/components/manual-activity-button";
+import { fuelSummary } from "@/components/fueling/fuel-plan";
+import type { FuelContext } from "@/components/fueling/workout-fuel-panel";
+import { planFueling, sessionFromStructure } from "@/lib/nutrition";
 import { formatDateShort, formatDayLong, formatDuration } from "@/lib/format";
 import type { Sport, Thresholds, WorkoutStructure } from "@/lib/workout/types";
 
@@ -70,6 +73,7 @@ export function CalendarView({
   library,
   thresholds,
   connections,
+  fuel,
 }: {
   start: string;
   weeks: number;
@@ -80,6 +84,7 @@ export function CalendarView({
   library: LibraryOption[];
   thresholds: Thresholds;
   connections: ConnectionInfo[];
+  fuel?: FuelContext;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -359,6 +364,7 @@ export function CalendarView({
               {detail.adapted ? <Badge tone="info">An Belastung angepasst</Badge> : null}
             </div>
             <WorkoutChart structure={detail.workout.structure} thresholds={thresholds} height={170} />
+            {fuel && detail.status === "planned" ? <FuelLine item={detail} thresholds={thresholds} fuel={fuel} /> : null}
             {detail.status === "planned" ? (
               <form
                 className="mt-4 flex flex-wrap items-end gap-2"
@@ -416,6 +422,20 @@ export function CalendarView({
       />
       <ManualActivityDialog open={!!recordDay} day={recordDay} onClose={() => setRecordDay(null)} />
     </div>
+  );
+}
+
+/** Fueling targets for a planned session, with a link to the full plan. */
+function FuelLine({ item, thresholds, fuel }: { item: CalWorkout; thresholds: Thresholds; fuel: FuelContext }) {
+  const summary = useMemo(() => fuelSummary(planFueling(sessionFromStructure(item.workout.structure, thresholds), fuel.profile, fuel.pantry)), [item, thresholds, fuel]);
+  return (
+    <Link href={`/fueling?plan=${item.scheduledId}`} className="mt-3 flex items-center gap-3 rounded-xl border border-border bg-surface-2/60 px-4 py-2.5 transition-colors hover:bg-surface-2">
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-semibold text-ink">Verpflegung</span>
+        <span className="block truncate text-[13px] text-ink-2">{summary}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-ink-3" />
+    </Link>
   );
 }
 

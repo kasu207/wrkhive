@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type { ActivityBests } from "@/lib/analytics/bests";
 import type { DashboardLayout } from "@/lib/dashboard";
+import type { ProductKind, SessionFlags, SweatSodium, TempClass } from "@/lib/nutrition/types";
 import type { WorkoutStructure } from "@/lib/workout/types";
 
 const createdAt = () =>
@@ -37,6 +38,13 @@ export const users = sqliteTable(
     appleHealthLastAt: integer("apple_health_last_at", { mode: "timestamp_ms" }),
     /** Widgets on the athlete's dashboard in display order; null = default layout (lib/dashboard.ts). */
     dashboard: text("dashboard", { mode: "json" }).$type<DashboardLayout>(),
+    /** Carbohydrate the gut tolerates during exercise, g/h; raised step by step (gut training). */
+    fuelMaxCarb: integer("fuel_max_carb").notNull().default(60),
+    fuelSweatSodium: text("fuel_sweat_sodium", { enum: ["low", "average", "high"] }).$type<SweatSodium>().notNull().default("average"),
+    fuelCaffeine: integer("fuel_caffeine", { mode: "boolean" }).notNull().default(false),
+    fuelPreferNatural: integer("fuel_prefer_natural", { mode: "boolean" }).notNull().default(false),
+    /** Product ids in the athlete's pantry (catalog and own products); null = default pantry. */
+    fuelPantry: text("fuel_pantry", { mode: "json" }).$type<string[]>(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_apple_health_key_idx").on(t.appleHealthKeyHash)],
@@ -276,6 +284,93 @@ export const wellness = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.date] })],
 );
 
+/** The athlete's own fueling products with the values from the pack. */
+export const fuelProducts = sqliteTable(
+  "fuel_products",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: ["gel", "chew", "bar", "fruit", "snack", "drink", "salt"] }).$type<ProductKind>().notNull(),
+    carbsG: real("carbs_g").notNull(),
+    sodiumMg: integer("sodium_mg").notNull().default(0),
+    caffeineMg: integer("caffeine_mg").notNull().default(0),
+    multiSource: integer("multi_source", { mode: "boolean" }).notNull().default(false),
+    fluidMl: integer("fluid_ml"),
+    servingLabel: text("serving_label").notNull().default("1 Portion"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("fuel_products_user_idx").on(t.userId)],
+);
+
+/** Weigh-in before and after a session: the athlete's sweat rate. */
+export const sweatTests = sqliteTable(
+  "sweat_tests",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    activityId: text("activity_id").references(() => activities.id, { onDelete: "set null" }),
+    date: text("date").notNull(),
+    sport: text("sport", { enum: ["ride", "run", "strength"] }).notNull(),
+    durationSec: integer("duration_sec").notNull(),
+    tempC: real("temp_c").notNull(),
+    tempClass: text("temp_class", { enum: ["cool", "mild", "warm", "hot"] }).$type<TempClass>().notNull(),
+    preKg: real("pre_kg").notNull(),
+    postKg: real("post_kg").notNull(),
+    fluidMl: integer("fluid_ml").notNull().default(0),
+    urineMl: integer("urine_ml").notNull().default(0),
+    rateLh: real("rate_lh").notNull(),
+    notes: text("notes"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("sweat_tests_user_idx").on(t.userId, t.date)],
+);
+
+/** What the athlete ate and drank in a session and how the gut took it. */
+export const fuelLogs = sqliteTable(
+  "fuel_logs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    activityId: text("activity_id").references(() => activities.id, { onDelete: "set null" }),
+    date: text("date").notNull(),
+    sport: text("sport", { enum: ["ride", "run", "strength", "other"] }).notNull(),
+    durationSec: integer("duration_sec").notNull(),
+    /** Planned carbohydrate for the session, g/h, 0 when unknown. */
+    targetCarbsPerHour: integer("target_carbs_per_hour").notNull().default(0),
+    carbsG: integer("carbs_g").notNull(),
+    fluidMl: integer("fluid_ml"),
+    /** 1 = no complaints .. 5 = severe gut problems. */
+    gutScore: integer("gut_score"),
+    /** 1 = empty .. 5 = strong until the end. */
+    energyScore: integer("energy_score"),
+    notes: text("notes"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("fuel_logs_user_idx").on(t.userId, t.date)],
+);
+
+/** Per scheduled session: conditions the plan cannot know (temperature, race, fasted). */
+export const fuelOverrides = sqliteTable("fuel_overrides", {
+  scheduledWorkoutId: text("scheduled_workout_id")
+    .primaryKey()
+    .references(() => scheduledWorkouts.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tempClass: text("temp_class", { enum: ["cool", "mild", "warm", "hot"] }).$type<TempClass>(),
+  flags: text("flags", { mode: "json" }).$type<SessionFlags>(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
 export const coachMessages = sqliteTable(
   "coach_messages",
   {
@@ -332,3 +427,6 @@ export type TrainingPlan = typeof trainingPlans.$inferSelect;
 export type Delivery = typeof deliveries.$inferSelect;
 export type CoachMessage = typeof coachMessages.$inferSelect;
 export type Wellness = typeof wellness.$inferSelect;
+export type FuelProductRow = typeof fuelProducts.$inferSelect;
+export type SweatTest = typeof sweatTests.$inferSelect;
+export type FuelLog = typeof fuelLogs.$inferSelect;

@@ -45,6 +45,7 @@ const { purgeStrayDemoData } = await import("./demo-cleanup");
 const { beginConnect } = await import("./connections");
 const { saveCheckin, upsertWellness, wellnessBetween, recoveryFor } = await import("./wellness");
 const { dashboardData, emptyHint } = await import("./dashboard");
+const { fuelContext, fuelingToday, fuelProfileOf, pantryOf, planForScheduled, progressionFor } = await import("./nutrition");
 
 function makeUser(id: string) {
   const db = getDb();
@@ -587,5 +588,77 @@ describe("daily health values", () => {
     expect(Object.keys(d.bests().powerYear).length).toBeGreaterThan(3);
     expect(d.efficiency().length).toBeGreaterThan(0);
     expect(d.intensity().sessions).toBeGreaterThan(0);
+  });
+});
+
+describe("fueling", () => {
+  const structure = (minutes: number) => ({
+    sport: "ride" as const,
+    nodes: [{ id: "s1", type: "step" as const, kind: "active" as const, duration: { type: "time" as const, seconds: minutes * 60 }, target: { type: "power" as const, low: 68, high: 72 } }],
+  });
+  const reload = (id: string) => getDb().select().from(schema.users).where(eq(schema.users.id, id)).get()!;
+
+  it("builds the profile from weight, settings and sweat tests", () => {
+    const user = makeUser("u-fuel-profile");
+    expect(fuelProfileOf(user)).toMatchObject({ weightKg: 70, weightKnown: false, maxCarbPerHour: 60, sweatSodium: "average", sweatSamples: [] });
+    const today = todayFor(user);
+    saveCheckin(user.id, { date: today, legs: null, sleepFeel: null, motivation: null, weightKg: 76.5 });
+    getDb()
+      .insert(schema.sweatTests)
+      .values({ id: "st1", userId: user.id, date: today, sport: "ride", durationSec: 3600, tempC: 24, tempClass: "warm", preKg: 77, postKg: 76, fluidMl: 500, urineMl: 0, rateLh: 1.5 })
+      .run();
+    const profile = fuelProfileOf(user);
+    expect(profile).toMatchObject({ weightKg: 76.5, weightKnown: true });
+    expect(profile.sweatSamples).toEqual([{ sport: "ride", tempClass: "warm", rateLh: 1.5 }]);
+    expect(fuelContext(user)).toContain("1.5 l/h");
+    // Default pantry until the athlete chooses.
+    expect(pantryOf(user).map((p) => p.id)).toContain("date");
+  });
+
+  it("plans a scheduled session with overrides and the next session", () => {
+    const user = makeUser("u-fuel-plan");
+    const today = todayFor(user);
+    const db = getDb();
+    db.insert(schema.workouts).values({ id: "fw-long", userId: user.id, name: "Lange Ausfahrt", sport: "ride", structure: structure(180), durationSec: 10800 }).run();
+    db.insert(schema.workouts).values({ id: "fw-short", userId: user.id, name: "Locker", sport: "ride", structure: structure(40), durationSec: 2400 }).run();
+    db.insert(schema.scheduledWorkouts).values({ id: "fs-1", userId: user.id, workoutId: "fw-long", date: today, createdAt: new Date(Date.now() - 1000) }).run();
+    db.insert(schema.scheduledWorkouts).values({ id: "fs-2", userId: user.id, workoutId: "fw-short", date: today }).run();
+
+    const first = planForScheduled(user, "fs-1")!;
+    expect(first.plan.during.carbsPerHour).toBeGreaterThanOrEqual(40);
+    expect(first.plan.schedule.slots.length).toBeGreaterThan(5);
+    // The second session the same day makes recovery urgent.
+    expect(first.plan.post.urgent).toBe(true);
+    expect(planForScheduled(user, "fs-2")!.plan.during.carbsPerHour).toBe(0);
+    expect(planForScheduled(makeUser("u-fuel-other"), "fs-1")).toBeNull();
+
+    const mild = first.plan.during.fluidMlPerHour;
+    db.insert(schema.fuelOverrides).values({ scheduledWorkoutId: "fs-1", userId: user.id, tempClass: "hot", flags: { race: true } }).run();
+    const hot = planForScheduled(user, "fs-1")!;
+    expect(hot.plan.during.fluidMlPerHour).toBeGreaterThan(mild);
+    expect(hot.plan.during.carbsPerHour).toBe(60);
+    expect(hot.plan.pre.loading).not.toBeNull();
+
+    const f = fuelingToday(user);
+    expect(f.next?.scheduledId).toBe("fs-1");
+    expect(emptyHint("fueling", dashboardData(user))).toBeNull();
+    expect(emptyHint("fueling", dashboardData(makeUser("u-fuel-empty")))).toContain("geplant");
+  });
+
+  it("asks for a log after a long session and learns from logs", () => {
+    const user = makeUser("u-fuel-log");
+    const today = todayFor(user);
+    const db = getDb();
+    db.insert(schema.activities)
+      .values({ id: "fa-1", userId: user.id, provider: "manual", externalId: "fa-1", sport: "ride", name: "Runde", startTime: new Date(), date: today, durationSec: 3 * 3600 })
+      .run();
+    expect(fuelingToday(user).unlogged?.id).toBe("fa-1");
+    for (const [i, date] of [today, addDaysIso(today, -3), addDaysIso(today, -6)].entries()) {
+      db.insert(schema.fuelLogs)
+        .values({ id: `fl-${i}`, userId: user.id, activityId: i === 0 ? "fa-1" : null, date, sport: "ride", durationSec: 3 * 3600, targetCarbsPerHour: 60, carbsG: 185, gutScore: 1 })
+        .run();
+    }
+    expect(fuelingToday(user).unlogged).toBeNull();
+    expect(progressionFor(reload(user.id))).toMatchObject({ direction: "up", suggested: 70 });
   });
 });

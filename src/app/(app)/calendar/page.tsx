@@ -12,6 +12,7 @@ import { requireUser, thresholdsOf } from "@/lib/server/auth";
 import { todayFor } from "@/lib/server/sync";
 import { activitiesBetween, scheduledBetween } from "@/lib/server/training";
 import { connectionPreference } from "@/lib/apps";
+import { fuelProfileOf, pantryOf } from "@/lib/server/nutrition";
 
 export const metadata: Metadata = { title: "Kalender" };
 
@@ -88,6 +89,7 @@ export default async function CalendarPage(props: PageProps<"/calendar">) {
         library={library}
         thresholds={thresholdsOf(user)}
         connections={connections.map((c) => ({ provider: c.provider, mode: c.mode, status: c.status, displayName: c.displayName }))}
+        fuel={{ profile: fuelProfileOf(user), pantry: pantryOf(user) }}
       />
     </div>
   );

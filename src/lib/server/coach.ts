@@ -17,6 +17,7 @@ import { thresholdsOf } from "./auth";
 import { env } from "./env";
 import { todayFor } from "./sync";
 import { pmcFor, trainingContext, weeklyVolume } from "./training";
+import { fuelContext } from "./nutrition";
 
 // ---------------------------------------------------------------------------
 // Structured output schema
@@ -275,7 +276,7 @@ async function aiReply(user: User): Promise<CoachResult> {
   const messages = historyAsMessages(user.id);
   const last = messages[messages.length - 1];
   if (!last || last.role !== "user") throw new Error("No user message");
-  last.content = `<trainingskontext>\n${trainingContext(user)}\n</trainingskontext>\n\n${last.content as string}`;
+  last.content = `<trainingskontext>\n${trainingContext(user)}\n${fuelContext(user)}\n</trainingskontext>\n\n${last.content as string}`;
 
   let response = await callModel(messages);
   if (response.stop_reason === "refusal") {

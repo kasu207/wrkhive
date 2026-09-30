@@ -22,6 +22,7 @@ import { formatDateShort, formatDuration, formatNumber, formatPace } from "@/lib
 import { thresholdsOf } from "@/lib/server/auth";
 import { emptyHint, type DashboardData } from "@/lib/server/dashboard";
 import { adaptWorkout } from "@/lib/workout/adapt";
+import { fuelSummary, packingSummary, range } from "@/components/fueling/fuel-plan";
 import { CheckinForm } from "./checkin-form";
 import { ThresholdSuggestions } from "./threshold-suggestions";
 
@@ -88,6 +89,8 @@ function renderContent(item: LayoutItem, d: DashboardData, sampleLoad: number): 
       return <TodayCard d={d} />;
     case "form":
       return <FormCard d={d} sampleLoad={sampleLoad} />;
+    case "fueling":
+      return <FuelingCard d={d} />;
     case "recovery":
       return <RecoveryCard d={d} />;
     case "checkin": {
@@ -211,6 +214,49 @@ function renderContent(item: LayoutItem, d: DashboardData, sampleLoad: number): 
 
 // ---------------------------------------------------------------------------
 // Today and form
+
+function FuelingCard({ d }: { d: DashboardData }) {
+  const { next, unlogged } = d.fueling();
+  const plan = next?.plan;
+  return (
+    <Card className="flex h-full flex-col">
+      <CardHeader title="Verpflegung" action={<Arrow href="/fueling" label="Planer" />} />
+      <div className="flex flex-1 flex-col gap-3 px-5 pb-5 pt-3">
+        {next && plan ? (
+          <Link href={`/fueling?plan=${next.scheduledId}`} className="block rounded-xl border border-border p-3.5 transition-colors hover:border-border-strong hover:bg-surface-2/50">
+            <div className="flex items-center gap-3">
+              <SportTile sport={next.workout.sport} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[15px] font-semibold">{next.workout.name}</div>
+                <div className="text-[13px] text-ink-3">
+                  {next.date === d.today ? "Heute" : "Morgen"} · {formatDuration(plan.input.durationSec, { compact: true })}
+                </div>
+              </div>
+            </div>
+            <p className="mt-2.5 text-[14px] font-medium text-ink">{fuelSummary(plan)}</p>
+            {plan.pre.meal ? (
+              <p className="mt-1 text-[13px] text-ink-2">
+                Vorher: {range(plan.pre.meal.carbsG, "g")} Kohlenhydrate, {range(plan.pre.meal.hoursBefore, "h")} vor dem Start
+              </p>
+            ) : null}
+            {plan.schedule.packing.length ? <p className="mt-1 text-[13px] text-ink-2">Einpacken: {packingSummary(plan.schedule)}</p> : null}
+          </Link>
+        ) : null}
+        {unlogged ? (
+          <Link href={`/fueling?tab=log&activity=${unlogged.id}`} className="flex items-center gap-3 rounded-xl bg-brand-soft/70 px-3.5 py-3 text-[13px] text-brand-ink transition-colors hover:bg-brand-soft">
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">Wie lief die Verpflegung?</span>
+              <span className="block truncate">
+                {unlogged.name} · {formatDuration(unlogged.durationSec, { compact: true })}. Zwei Klicks, und dein Darmtraining lernt mit.
+              </span>
+            </span>
+            <ArrowRight className="size-4 shrink-0" />
+          </Link>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
 
 function TodayCard({ d }: { d: DashboardData }) {
   const t = thresholdsOf(d.user);

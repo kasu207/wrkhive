@@ -198,7 +198,7 @@ export function deviceVo2max(user: Pick<User, "id" | "timeZone">): DeviceVo2max 
   return run || ride ? { run, ride } : null;
 }
 
-function latestWellness(userId: string, field: "weightKg" | "vo2max" | "vo2maxRide", from: ISODate, to: ISODate): { value: number; date: ISODate } | null {
+export function latestWellness(userId: string, field: "weightKg" | "vo2max" | "vo2maxRide", from: ISODate, to: ISODate): { value: number; date: ISODate } | null {
   const col = wellness[field];
   const row = getDb()
     .select({ date: wellness.date, value: col })

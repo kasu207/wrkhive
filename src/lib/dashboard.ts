@@ -18,6 +18,7 @@ export const GROUP_LABEL: Record<WidgetGroup, string> = {
 
 export const WIDGETS = {
   today: { title: "Heute", description: "Geplante Einheit, Anpassung an deine Form und die nächsten Tage.", group: "today", sizes: ["m", "l"] },
+  fueling: { title: "Verpflegung", description: "Was du für die nächste Einheit einpackst, und Protokoll nach langen Einheiten.", group: "today", sizes: ["m"] },
   form: { title: "Form", description: "Frische relativ zu deiner Fitness, mit Fitness und Ermüdung.", group: "today", sizes: ["m", "l"] },
   recovery: { title: "Erholung", description: "HRV, Ruhepuls, Schlaf und Check-in zu einer Aussage verdichtet.", group: "recovery", sizes: ["m", "l"] },
   checkin: { title: "Morgen-Check-in", description: "Beine, Schlafgefühl und Motivation in drei Klicks, optional Messwerte.", group: "recovery", sizes: ["m", "l"] },
@@ -64,6 +65,7 @@ export const DEFAULT_LAYOUT: DashboardLayout = [
   { id: "form", size: "m" },
   { id: "recovery", size: "m" },
   { id: "checkin", size: "m" },
+  { id: "fueling", size: "m" },
   { id: "restingHr", size: "s" },
   { id: "hrv", size: "s" },
   { id: "weekHours", size: "s" },

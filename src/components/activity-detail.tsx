@@ -1,13 +1,13 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Apple, Scale, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { deleteManualActivity } from "@/app/actions/activities";
 import { ZoneBars } from "@/components/charts/zone-bars";
 import { SportTile } from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import type { Activity } from "@/db/schema";
@@ -106,6 +106,21 @@ export function ActivityDetail({ activity: a, closeHref, lthr }: { activity: Act
         <div className="mt-5 rounded-xl border border-border pt-4">
           <h3 className="mb-3 px-5 text-[14px] font-semibold">Pulszonen</h3>
           <ZoneBars seconds={a.hrZoneSec} />
+        </div>
+      ) : null}
+      {a.durationSec >= 30 * 60 ? (
+        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-2/60 px-4 py-3">
+          <span className="mr-auto text-[13px] text-ink-2">Verpflegung</span>
+          <ButtonLink href={`/fueling?tab=log&activity=${a.id}`} variant="secondary" size="sm">
+            <Apple />
+            Protokollieren
+          </ButtonLink>
+          {a.sport !== "other" ? (
+            <ButtonLink href={`/fueling?tab=sweat&activity=${a.id}`} variant="ghost" size="sm">
+              <Scale />
+              Als Schweißtest
+            </ButtonLink>
+          ) : null}
         </div>
       ) : null}
     </Dialog>

@@ -181,6 +181,7 @@ APP=http://localhost:3000 WAHOO_WEBHOOK_TOKEN=mock-wahoo-webhook-token npm run t
 | **KI-Coach** | Chat für spontane Workouts auf Basis der aktuellen Form. Planassistent für periodisierte Pläne (Grundlage, Aufbau, Spitze, Tapering, 3:1-Entlastung), mit einem Klick in den Kalender. Nutzt Claude (`ANTHROPIC_API_KEY`); ohne Schlüssel arbeitet ein regelbasierter Coach. |
 | **Kalender** | 4-Wochen-Ansicht, Drag & Drop, geplante und absolvierte Einheiten, Wochensummen (Soll/Ist/Planziel), automatisches Abhaken bei passender Aktivität. |
 | **Dashboard** | Frei zusammenstellbar: Widgets ein- und ausblenden, sortieren (Ziehen, Tastatur, Pfeile) und in der Größe wählen; ohne Daten erklärt ein Widget, woher sie kommen. Performance-Management-Chart, Wochenumfang, Pulszonen, Intensitätsverteilung (locker/mittel/hart, Ziel 80/20), Regelmäßigkeit mit Wochenziel, aerobe Effizienz und Entkopplung, Bestwerte (Leistung 5 s bis 60 min, 1/5/10 km) mit FTP-Schätzung, Schwellen-Check mit Übernahme per Klick, VO2max (Lauf aus Pace und Puls aller Läufe, Rad aus bester 5-min-Leistung pro kg, daneben der Wert der Uhr aus Garmin, Apple Health oder intervals.icu) und Laufprognosen. |
+| **Verpflegung** | Plan für vorher, während und danach zu jedem Workout, jedem Kalendereintrag und frei für Wettkämpfe: Kohlenhydrate (g/h nach Dauer, Intensität und Sportart, begrenzt auf die eigene Verträglichkeit), Trinken (aus Schweißrate und Temperatur, höchstens 1 l/h), Natrium (nach Salzgehalt des Schweißes), optional Koffein. Zeitleiste mit Einnahmen aus dem eigenen Vorrat (Datteln, Banane, Riegel, Gels, Getränkemix, Salz, eigene Produkte mit Etikettwerten), die harte Intervalle auslässt, und Packliste. Schweißtest per Wiegen, Protokoll mit Magen- und Energiebewertung und Darmtraining, das die Verträglichkeit schrittweise anhebt. Grundlage: Positionspapiere von ACSM, DGE und ISSN (Quellen in `src/lib/nutrition/guidelines.ts`). |
 | **Erholung und Gesundheit** | Ruhepuls, HRV (rMSSD, Apple Watch als SDNN getrennt), Schlafdauer, Gewicht und die VO2max der Uhr aus Apple Health, Garmin (Health API) und intervals.icu, jeweils als 7-Tage-Schnitt gegen den persönlichen Normalbereich der letzten 60 Tage. Morgen-Check-in (Beine, Schlafgefühl, Motivation, optional Messwerte). Eingeschränkte Erholung (zwei oder mehr negative Signale) macht harte Einheiten des Tages kürzer und leichter. |
 
 ## Entwicklung ohne Docker
@@ -233,6 +234,7 @@ src/
   lib/fit/              FIT-Aktivitätsimport
   lib/apple-health.ts   Apple-Health-Export (Stream-Parser) und Health-Auto-Export-Format
   lib/analytics/        TSS, CTL/ATL/TSB, VO2max, Wettkampfprognosen
+  lib/nutrition/        Verpflegung: Richtwerte, Zeitplan, Schweißrate, Darmtraining, Produktkatalog
   lib/coach/            Regelbasierter Workout- und Plangenerator, Coach-Prompt
   lib/server/           Auth, Krypto, Sync, Scheduler, Geräteadapter, Coach (Claude)
 scripts/                Anbieter-Simulator und End-to-End-Sync-Prüfung
@@ -242,11 +244,12 @@ Workouts speichern Intensitäten **relativ** zu den Schwellenwerten (% FTP, % Sc
 
 ## Tests
 
-- `npm test`: 194 Unit- und Integrationstests, u. a.:
+- `npm test`: 263 Unit- und Integrationstests, u. a.:
   - Parser und Exporter; FIT-Workouts werden mit dem offiziellen Garmin-Decoder zurückgelesen
   - FIT-Aktivitätsimport inklusive NP, Pulszonen, ZIP und defekter Aufzeichnungen
   - Apple-Health-Export (gestreamtes ZIP, auch mit Data Descriptors) und Health-Auto-Export-Webhook v1/v2
   - Belastungsmodelle gegen die Daniels-Tabellen
+  - Verpflegungsplaner: Richtwerte je Dauer und Intensität, Trinkgrenzen, Natrium, Zeitleiste außerhalb harter Intervalle, Darmtraining
   - Sync mit echter SQLite-Datenbank und Coach mit gemocktem Claude
 - `npm run test:e2e:wahoo-setup`: 8 Prüfungen der Wahoo-Einrichtung über die Oberfläche (App ohne `WAHOO_CLIENT_ID` starten, `WAHOO_API_BASE`/`WAHOO_AUTHORIZE_URL` auf den Simulator)
 - `npm run test:e2e`: 32 End-to-End-Prüfungen des Syncs in beide Richtungen gegen den Anbieter-Simulator, im Browser und im Docker-Container

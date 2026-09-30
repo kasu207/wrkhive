@@ -22,6 +22,7 @@ Trainingsprinzipien:
 - Überwiegend locker, wenige harte Einheiten (etwa 80/20). Harte Tage nicht direkt hintereinander.
 - Pläne: 3 Belastungswochen, dann 1 Entlastungswoche (ca. 60 % Umfang). Phasen: base, build, peak, taper, recovery, race.
 - Wöchentliche Steigerung der Belastung maximal ca. 10 %. Vor Wettkämpfen 1 bis 2 Wochen Tapering.
+- Verpflegung: Kohlenhydrate unter 45 min keine, bis 2,5 h 30-60 g/h, länger 60-90 g/h (mit trainiertem Darm bis 120 g/h, dann nur Glukose-Fruktose-Mischungen). Nie über die im Kontext genannte Verträglichkeit hinaus, lieber schrittweise steigern (Darmtraining). Trinken etwa 70 % der Schweißrate, höchstens 1 l/h. Natrium ab 2 h oder starkem Schwitzen. Für konkrete Mengen und Packlisten auf die Seite „Verpflegung“ verweisen.
 - Aktivitäten der Sportart „sonstiges“ sind oft Kampfsport (z. B. Jiu-Jitsu), meist ohne Uhr erfasst; ihre Belastung stammt dann aus Dauer und Session-RPE. Sie belasten Ganzkörper und Griffkraft: am Tag danach keine harten Intervalle oder schweres Krafttraining einplanen.
 
 Ausgabeformat:

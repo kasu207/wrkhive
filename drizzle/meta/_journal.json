@@ -64,6 +64,13 @@
       "when": 1790714860725,
       "tag": "0008_device_vo2max",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790747585980,
+      "tag": "0009_fueling",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import { env } from "@/lib/server/env";
 import { starterStructure } from "@/lib/workout/edit";
 import type { Sport } from "@/lib/workout/types";
 import { connectionPreference } from "@/lib/apps";
+import { fuelProfileOf, pantryOf } from "@/lib/server/nutrition";
 
 // Generating a workout with the AI coach can take a while.
 export const maxDuration = 120;
@@ -37,6 +38,7 @@ export default async function WorkoutPage(props: PageProps<"/workouts/[id]">) {
     .map((c) => ({ provider: c.provider, mode: c.mode, status: c.status, displayName: c.displayName }))
     // The athlete's own device first, so the send dialog preselects it.
     .sort((a, b) => connectionPreference(user.apps).indexOf(a.provider) - connectionPreference(user.apps).indexOf(b.provider));
+  const fuel = { profile: fuelProfileOf(user), pantry: pantryOf(user) };
 
   if (id === "new") {
     const { sport: sportParam } = await props.searchParams;
@@ -48,6 +50,7 @@ export default async function WorkoutPage(props: PageProps<"/workouts/[id]">) {
         thresholds={thresholdsOf(user)}
         connections={connections}
         engine={env.anthropicConfigured() ? "ai" : "rules"}
+        fuel={fuel}
       />
     );
   }
@@ -62,6 +65,7 @@ export default async function WorkoutPage(props: PageProps<"/workouts/[id]">) {
       initial={{ id: w.id, name: w.name, description: w.description, structure: w.structure }}
       thresholds={thresholdsOf(user)}
       connections={connections}
+      fuel={fuel}
     />
   );
 }

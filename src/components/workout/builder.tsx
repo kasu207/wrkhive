@@ -37,6 +37,7 @@ import { ExercisePicker } from "./exercise-picker";
 import { GeneratePanel } from "./generate-panel";
 import { SendDialog, type ConnectionInfo } from "./send-dialog";
 import { WorkoutChart } from "./workout-chart";
+import { WorkoutFuelPanel, type FuelContext } from "@/components/fueling/workout-fuel-panel";
 
 interface Initial {
   id: string | null;
@@ -54,6 +55,7 @@ export function WorkoutBuilder({
   resetKey,
   openSend = false,
   engine = "rules",
+  fuel,
 }: {
   initial: Initial;
   thresholds: Thresholds;
@@ -63,6 +65,8 @@ export function WorkoutBuilder({
   openSend?: boolean;
   /** Engine behind "Automatisch erzeugen" (only offered for new workouts). */
   engine?: "ai" | "rules";
+  /** Athlete profile and pantry for the live fueling plan. */
+  fuel?: FuelContext;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -408,6 +412,8 @@ export function WorkoutBuilder({
           </div>
         ) : null}
       </div>
+
+      {fuel ? <WorkoutFuelPanel structure={structure} thresholds={thresholds} fuel={fuel} /> : null}
 
       {/* Editor */}
       <div className="mb-3 flex items-center justify-between gap-3">

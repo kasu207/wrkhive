@@ -9,6 +9,7 @@ import { hrvTrend, metricTrend, recoveryFrom } from "@/lib/analytics/wellness";
 import { DEFAULT_GOAL, type WidgetId } from "@/lib/dashboard";
 import { addDays } from "@/lib/dates";
 import { readinessFor } from "./adapt";
+import { fuelingToday } from "./nutrition";
 import { activitiesBetween, cyclingFitness, deviceVo2max, formCalibration, pmcFor, recentActivities, runningFitness, scheduledBetween, weeklyVolume } from "./training";
 import { todayFor } from "./sync";
 import { wellnessBetween } from "./wellness";
@@ -61,6 +62,7 @@ export function dashboardData(user: User) {
     cycling: lazy(() => cyclingFitness(user)),
     deviceVo2max: lazy(() => deviceVo2max(user)),
     upcoming: lazy(() => scheduledBetween(user.id, today, addDays(today, 6))),
+    fueling: lazy(() => fuelingToday(user)),
     activityCount: lazy(() => getDb().select({ n: count() }).from(activities).where(eq(activities.userId, user.id)).get()?.n ?? 0),
     count28: lazy(() => getDb().select({ n: count() }).from(activities).where(and(eq(activities.userId, user.id), gte(activities.date, addDays(today, -27)))).get()?.n ?? 0),
     zoneSec: lazy(() => {
@@ -124,6 +126,10 @@ export function emptyHint(id: WidgetId, d: DashboardData): string | null {
       return d.fitness() || d.cycling() || d.deviceVo2max()
         ? null
         : "Braucht zwei Läufe mit Puls in den letzten sechs Wochen, Radfahrten mit Leistungsdaten (FIT) und dein Gewicht, oder die VO2max deiner Uhr über Garmin, Apple Health oder intervals.icu.";
+    case "fueling": {
+      const f = d.fueling();
+      return f.next || f.unlogged ? null : "Erscheint, sobald für heute oder morgen eine Einheit geplant ist. Freie Planung für Wettkämpfe und Ausfahrten unter Verpflegung.";
+    }
     case "predictions":
       return d.fitness() ? null : "Braucht mindestens zwei Läufe mit Puls in den letzten sechs Wochen.";
     case "thresholds":

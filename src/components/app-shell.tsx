@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Dumbbell, LayoutDashboard, List, LogOut, MessageSquare, Plus, Settings, Watch } from "lucide-react";
+import { Apple, CalendarDays, Dumbbell, LayoutDashboard, List, LogOut, MessageSquare, Plus, Settings, Watch } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -14,11 +14,13 @@ const NAV = [
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/calendar", label: "Kalender", icon: CalendarDays },
   { href: "/coach", label: "Coach", icon: MessageSquare },
+  { href: "/fueling", label: "Verpflegung", icon: Apple },
   { href: "/activities", label: "Aktivitäten", icon: List },
   { href: "/devices", label: "Geräte", icon: Watch },
 ];
 
-const MOBILE_NAV = NAV.filter((n) => n.href !== "/activities");
+// Five tabs fit the mobile bar; Verpflegung sits in the mobile header instead.
+const MOBILE_NAV = NAV.filter((n) => n.href !== "/activities" && n.href !== "/fueling");
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -100,6 +102,9 @@ export function AppShell({ user, demo, children }: { user: { name: string; email
           <Link href="/workouts/new" className={buttonClass("primary", "sm")} aria-label="Neues Workout">
             <Plus />
             Neu
+          </Link>
+          <Link href="/fueling" className={buttonClass("ghost", "icon")} aria-label="Verpflegung">
+            <Apple />
           </Link>
           <Link href="/settings" className={buttonClass("ghost", "icon")} aria-label="Einstellungen">
             <Settings />

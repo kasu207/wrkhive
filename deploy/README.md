@@ -1,8 +1,8 @@
 # Wrkhive auf einem eigenen Server (Hetzner, Docker)
 
-Ergebnis: Wrkhive läuft unter `https://deine-domain` mit automatischem HTTPS (Caddy, Let's Encrypt), täglicher Sicherung und Updates per einem Befehl. Nur dein Konto kann sich registrieren, die Demo ist aus.
+Ergebnis: Wrkhive läuft unter `https://app.wrkhive.cloud` mit automatischem HTTPS (Caddy, Let's Encrypt), täglicher Sicherung und Updates per einem Befehl. Nur dein Konto kann sich registrieren, die Demo ist aus.
 
-Voraussetzungen: Linux-Server mit Docker und Docker Compose (Plugin `docker compose`), eine Domain oder Subdomain, SSH-Zugang. Für den Build sollte der Server mindestens 2 GB RAM haben, besser 4 GB (Hetzner CX22). Bei 2 GB vorher Swap anlegen (siehe unten).
+Voraussetzungen: Linux-Server mit Docker und Docker Compose (Plugin `docker compose`), eine Domain oder Subdomain (hier `app.wrkhive.cloud`), SSH-Zugang. Für den Build sollte der Server mindestens 2 GB RAM haben, besser 4 GB (Hetzner CX22). Bei 2 GB vorher Swap anlegen (siehe unten).
 
 ## 1. Domain auf den Server zeigen lassen
 
@@ -10,10 +10,10 @@ Beim Domain-Anbieter einen DNS-Eintrag anlegen:
 
 | Typ | Name | Wert |
 | --- | --- | --- |
-| A | `wrkhive` (oder `@`) | IPv4 des Servers |
-| AAAA | `wrkhive` (oder `@`) | IPv6 des Servers (optional) |
+| A | `app` | IPv4 des Servers |
+| AAAA | `app` | IPv6 des Servers (optional) |
 
-Prüfen (auf dem eigenen Rechner): `ping wrkhive.deine-domain.de` muss die Server-IP zeigen.
+Prüfen (auf dem eigenen Rechner): `ping app.wrkhive.cloud` muss die Server-IP zeigen.
 
 ## 2. Ports freigeben
 
@@ -65,7 +65,7 @@ nano .env.production
 
 Mindestens ausfüllen:
 
-- `DOMAIN` – z. B. `wrkhive.deine-domain.de`
+- `DOMAIN` – `app.wrkhive.cloud`
 - `ACME_EMAIL` – deine E-Mail für Let's Encrypt
 - `APP_SECRET` – erzeugen mit `openssl rand -base64 48`, Ausgabe einfügen. **Nie wieder ändern**, sonst sind gespeicherte Verbindungen (intervals.icu-Schlüssel, Tokens) nicht mehr lesbar.
 
@@ -81,7 +81,7 @@ Die Datei enthält Geheimnisse; sie wird nicht ins Repository übernommen. Recht
 
 Das Skript baut das Image (beim ersten Mal einige Minuten), startet Wrkhive und Caddy und wartet, bis alles gesund ist. Caddy holt das HTTPS-Zertifikat beim ersten Aufruf automatisch.
 
-Danach `https://deine-domain` öffnen und **sofort dein Konto anlegen**: Mit `SIGNUP_MODE=first` ist die Registrierung nach dem ersten Konto geschlossen. Dein Konto ist damit auch der Besitzer der Installation (darf z. B. die Wahoo-App hinterlegen).
+Danach `https://app.wrkhive.cloud` öffnen und **sofort dein Konto anlegen**: Mit `SIGNUP_MODE=first` ist die Registrierung nach dem ersten Konto geschlossen. Dein Konto ist damit auch der Besitzer der Installation (darf z. B. die Wahoo-App hinterlegen).
 
 ## 6. Tägliche Sicherung
 
@@ -106,6 +106,18 @@ cd /opt/wrkhive && ./deploy/deploy.sh
 ```
 
 Sichert zuerst, holt den neuesten Code, baut neu und startet neu. Datenbank-Migrationen laufen automatisch.
+
+## Domain wechseln
+
+Für eine laufende Installation mit mitgeliefertem Caddy (`PROXY=caddy`), z. B. auf `app.wrkhive.cloud`:
+
+1. DNS-Eintrag für die neue Adresse anlegen (siehe Schritt 1) und warten, bis `ping app.wrkhive.cloud` die Server-IP zeigt. Caddy bekommt das Zertifikat erst, wenn der Eintrag stimmt.
+2. In `.env.production` `DOMAIN=app.wrkhive.cloud` setzen. `APP_SECRET` bleibt unverändert.
+3. `./deploy/deploy.sh` ausführen. Compose erstellt App und Caddy mit der neuen Domain neu; Caddy holt das Zertifikat beim ersten Aufruf (Fortschritt: `docker logs -f wrkhive-caddy`).
+4. Die neuen Adressen bei den Diensten eintragen (siehe „Nach dem Umzug auf HTTPS“). Bestehende Wahoo- und Garmin-Verbindungen bleiben gültig, nur Redirect-URI und Webhook-URL zeigen sonst noch auf die alte Adresse.
+5. Im Browser neu anmelden: Die Sitzung gilt nur für die alte Adresse.
+
+Die alte Adresse ist danach nicht mehr erreichbar, Caddy bedient nur `DOMAIN`. Daten und Verbindungen bleiben erhalten, weil sie in der Datenbank liegen und nicht an der Domain hängen.
 
 ## Lokale Daten auf den Server umziehen (optional)
 
@@ -180,7 +192,7 @@ Läuft auf dem Server schon ein Webserver auf Port 80/443 (Fehler beim Start: `f
 
    **Caddy auf dem Server** (`/etc/caddy/Caddyfile`), neuer Block am Ende:
    ```
-   wrkhive.deine-domain.de {
+   app.wrkhive.cloud {
    	encode zstd gzip
    	request_body {
    		max_size 70MB
@@ -199,5 +211,6 @@ Läuft auf dem Server schon ein Webserver auf Port 80/443 (Fehler beim Start: `f
 ## Nach dem Umzug auf HTTPS
 
 - **intervals.icu** funktioniert ohne Änderung.
-- **Apple Health (Health Auto Export):** Die Automation braucht die öffentliche HTTPS-Adresse `https://deine-domain/api/ingest/apple-health`. Wrkhive zeigt sie in der Apple-Health-Karte an und leitet sie aus `DOMAIN` in `.env.production` ab.
-- **Wahoo** (nach Freigabe deiner App): Im Wahoo-Entwicklerportal als Redirect URI `https://deine-domain/api/devices/wahoo/callback` eintragen. Mit HTTPS entfällt das localhost-Problem; Webhooks (sofortiger Import) gehen an `https://deine-domain/api/webhooks/wahoo`.
+- **Apple Health (Health Auto Export):** Die Automation braucht die öffentliche HTTPS-Adresse `https://app.wrkhive.cloud/api/ingest/apple-health`. Wrkhive zeigt sie in der Apple-Health-Karte an und leitet sie aus `DOMAIN` in `.env.production` ab.
+- **Wahoo** (nach Freigabe deiner App): Im Wahoo-Entwicklerportal als Redirect URI `https://app.wrkhive.cloud/api/devices/wahoo/callback` eintragen. Mit HTTPS entfällt das localhost-Problem; Webhooks (sofortiger Import) gehen an `https://app.wrkhive.cloud/api/webhooks/wahoo`.
+- **Garmin** (nur mit Freigabe im Garmin Connect Developer Program): Redirect URI `https://app.wrkhive.cloud/api/devices/garmin/callback`, Webhooks an `https://app.wrkhive.cloud/api/webhooks/garmin?token=<GARMIN_WEBHOOK_TOKEN>`.

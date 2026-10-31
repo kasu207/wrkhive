@@ -12,6 +12,11 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
       <main className="flex flex-1 items-start justify-center px-4 pb-16 pt-6 sm:items-center sm:pt-0">
         <div className="w-full max-w-[400px] animate-fade-up">{children}</div>
       </main>
+      <footer className="px-5 pb-6 text-center text-[13px] text-ink-3 sm:px-8">
+        <Link href="/impressum" className="hover:text-ink">
+          Impressum
+        </Link>
+      </footer>
     </div>
   );
 }

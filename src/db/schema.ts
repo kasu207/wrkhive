@@ -362,6 +362,21 @@ export const oauthStates = sqliteTable("oauth_states", {
   createdAt: createdAt(),
 });
 
+/** Messages sent through the public contact form (/kontakt), read by the installation owner. */
+export const contactMessages = sqliteTable(
+  "contact_messages",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    message: text("message").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    readAt: integer("read_at", { mode: "timestamp_ms" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("contact_messages_created_idx").on(t.createdAt)],
+);
+
 export type User = typeof users.$inferSelect;
 export type Workout = typeof workouts.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
@@ -372,3 +387,4 @@ export type Delivery = typeof deliveries.$inferSelect;
 export type CoachMessage = typeof coachMessages.$inferSelect;
 export type Wellness = typeof wellness.$inferSelect;
 export type CalendarEntry = typeof calendarEntries.$inferSelect;
+export type ContactMessage = typeof contactMessages.$inferSelect;

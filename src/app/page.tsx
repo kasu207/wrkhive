@@ -195,9 +195,14 @@ export default async function Home() {
         <div className="mx-auto flex max-w-[1160px] flex-col items-start justify-between gap-3 px-5 py-8 text-[13px] text-ink-3 sm:flex-row sm:items-center sm:px-8">
           <Logo className="opacity-80" />
           <p>Garmin, Wahoo und Zwift sind Marken ihrer jeweiligen Inhaber. Wrkhive ist ein unabhängiges Produkt.</p>
-          <Link href="/login" className="hover:text-ink">
-            Anmelden
-          </Link>
+          <div className="flex gap-4">
+            <Link href="/impressum" className="hover:text-ink">
+              Impressum
+            </Link>
+            <Link href="/login" className="hover:text-ink">
+              Anmelden
+            </Link>
+          </div>
         </div>
       </footer>
     </div>

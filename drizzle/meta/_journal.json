@@ -71,6 +71,13 @@
       "when": 1790715379214,
       "tag": "0009_calendar_entries_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793472829618,
+      "tag": "0010_contact_messages",
+      "breakpoints": true
     }
   ]
 }

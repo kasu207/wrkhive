@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { AppShell } from "@/components/app-shell";
 import { requireUser } from "@/lib/server/auth";
+import { unreadContactCount } from "@/lib/server/contact";
 import { dueEntries } from "@/lib/server/entries";
 import { staleConnections, syncConnection } from "@/lib/server/sync";
 
@@ -18,7 +19,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   }
 
   return (
-    <AppShell user={{ name: user.name, email: user.email }} demo={user.isDemo} badges={{ "/calendar": dueEntries(user).length }}>
+    <AppShell user={{ name: user.name, email: user.email }} demo={user.isDemo} badges={{ "/calendar": dueEntries(user).length }} unreadContact={unreadContactCount(user)}>
       {children}
     </AppShell>
   );

@@ -29,12 +29,15 @@ export function AppShell({
   user,
   demo,
   badges = {},
+  unreadContact = 0,
   children,
 }: {
   user: { name: string; email: string };
   demo: boolean;
   /** Open items per navigation entry (e.g. calendar entries waiting for confirmation). */
   badges?: Record<string, number>;
+  /** Unread contact-form messages (installation owner only). */
+  unreadContact?: number;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -97,6 +100,11 @@ export function AppShell({
                 <span className="block truncate text-[13px] font-semibold text-ink">{user.name}</span>
                 <span className="block truncate text-[12px] text-ink-3">Profil & Schwellen</span>
               </span>
+              {unreadContact ? (
+                <span className="ml-auto grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-ink tabular" title={`${unreadContact} ungelesene Kontaktanfrage(n)`}>
+                  {unreadContact}
+                </span>
+              ) : null}
             </Link>
             <form action={logout}>
               <button type="submit" className={buttonClass("ghost", "icon-sm")} aria-label="Abmelden" title="Abmelden">
@@ -104,9 +112,20 @@ export function AppShell({
               </button>
             </form>
           </div>
-          <Link href="/release-notes" className="mt-1 block px-2 text-[11px] text-ink-3 transition-colors hover:text-ink-2">
-            Neuigkeiten · Version {CURRENT_VERSION}
-          </Link>
+          <p className="mt-1 px-2 text-[11px] text-ink-3">
+            <Link href="/release-notes" className="transition-colors hover:text-ink-2">
+              Neuigkeiten · Version {CURRENT_VERSION}
+            </Link>
+          </p>
+          <p className="mt-0.5 px-2 text-[11px] text-ink-3">
+            <Link href="/impressum" className="transition-colors hover:text-ink-2">
+              Impressum
+            </Link>
+            {" · "}
+            <Link href="/kontakt" className="transition-colors hover:text-ink-2">
+              Kontakt
+            </Link>
+          </p>
         </div>
       </aside>
 
@@ -121,7 +140,8 @@ export function AppShell({
             <Plus />
             Neu
           </Link>
-          <Link href="/settings" className={buttonClass("ghost", "icon")} aria-label="Einstellungen">
+          <Link href="/settings" className={buttonClass("ghost", "icon", "relative")} aria-label={unreadContact ? `Einstellungen, ${unreadContact} ungelesene Kontaktanfrage(n)` : "Einstellungen"}>
+            {unreadContact ? <span className="absolute right-2 top-2 size-2 rounded-full bg-brand" aria-hidden /> : null}
             <Settings />
           </Link>
         </div>
